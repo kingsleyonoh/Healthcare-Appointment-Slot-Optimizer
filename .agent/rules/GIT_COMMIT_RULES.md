@@ -11,6 +11,7 @@ When committing and pushing, **only stage files that `git status` reports as tra
 3. **Never** attempt to `git add` a file that does not appear in `git status` output.
 4. If a file you expect to see is missing from `git status`, it is likely gitignored — do NOT force-add it.
 5. Use explicit file paths in `git add`, never `git add .` or `git add -A` unless the user explicitly asks for it.
+6. **NEVER use `git add -f`**. If `.gitignore` blocks a file, that is intentional. Do not bypass it under any circumstances.
 
 ### Gitignored files in this project
 
