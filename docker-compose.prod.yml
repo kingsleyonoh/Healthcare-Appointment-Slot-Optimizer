@@ -1,0 +1,37 @@
+# Production deployment with Traefik reverse proxy
+# BOOTSTRAP NOTE: Replace PROJECT_SLUG with your project's slug (e.g., "recon-engine")
+# Deploy: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: PROJECT_SLUG
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - traefik-public
+    labels:
+      # Traefik auto-discovery
+      - "traefik.enable=true"
+      - "traefik.http.routers.PROJECT_SLUG.rule=Host(`PROJECT_SLUG.kingsleyonoh.com`)"
+      - "traefik.http.routers.PROJECT_SLUG.entrypoints=websecure"
+      - "traefik.http.routers.PROJECT_SLUG.tls.certresolver=letsencrypt"
+      - "traefik.http.services.PROJECT_SLUG.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  traefik-public:
+    external: true
