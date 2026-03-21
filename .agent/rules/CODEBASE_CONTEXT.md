@@ -1,6 +1,6 @@
 # Healthcare Appointment Slot Optimizer — Codebase Context
 
-> Last updated: 2026-03-21
+> Last updated: 2026-03-21 (Phase 0 sync)
 > Template synced: 2026-03-21
 
 ## Tech Stack
@@ -103,7 +103,7 @@ appointment-slot-optimizer/
 | PORT | Server port | `.env` (default: 8000) |
 | ENV | Environment mode | `.env` (development/production) |
 | API_KEYS | Comma-separated valid API keys | `.env` |
-| DATABASE_URL | PostgreSQL connection string | `.env` |
+| DATABASE_URL | PostgreSQL connection string (port 5434 on dev — see Gotchas) | `.env` |
 | SLOT_INCREMENT_MINUTES | Slot generation interval | `.env` (default: 15) |
 | DEFAULT_BUFFER_MINUTES | Buffer between appointments | `.env` (default: 10) |
 | MAX_DAILY_APPOINTMENTS | Per-provider daily limit | `.env` (default: 20) |
@@ -122,7 +122,7 @@ appointment-slot-optimizer/
 | Migrate DB | `alembic upgrade head` |
 | New migration | `alembic revision --autogenerate -m "description"` |
 | Seed data | `python -m src.db.seed` |
-| Docker up | `docker compose up -d` |
+| Docker up | `docker compose up -d` (Postgres binds to host port **5434**) |
 
 ## Key Patterns & Conventions
 
@@ -143,7 +143,7 @@ appointment-slot-optimizer/
 
 | Date | Area | Gotcha | Discovered In |
 |------|------|--------|---------------|
-| | | | |
+| 2026-03-21 | Docker | Native PostgreSQL runs on port 5432; Docker Compose maps to **5434** to coexist. `DATABASE_URL` must use port 5434 for local dev. | Phase 0 setup |
 
 ## Shared Foundation (MUST READ before any implementation)
 
