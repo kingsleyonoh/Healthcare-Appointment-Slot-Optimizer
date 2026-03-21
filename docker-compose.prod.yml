@@ -1,5 +1,4 @@
 # Production deployment with Traefik reverse proxy
-# BOOTSTRAP NOTE: Replace PROJECT_SLUG with your project's slug (e.g., "recon-engine")
 # Deploy: docker compose -f docker-compose.prod.yml up -d
 
 services:
@@ -8,7 +7,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    container_name: PROJECT_SLUG
+    container_name: healthcare-slot-optimizer
     restart: unless-stopped
     env_file:
       - .env
@@ -17,10 +16,10 @@ services:
     labels:
       # Traefik auto-discovery
       - "traefik.enable=true"
-      - "traefik.http.routers.PROJECT_SLUG.rule=Host(`PROJECT_SLUG.kingsleyonoh.com`)"
-      - "traefik.http.routers.PROJECT_SLUG.entrypoints=websecure"
-      - "traefik.http.routers.PROJECT_SLUG.tls.certresolver=letsencrypt"
-      - "traefik.http.services.PROJECT_SLUG.loadbalancer.server.port=3000"
+      - "traefik.http.routers.healthcare-slot-optimizer.rule=Host(`healthcare-slot-optimizer.kingsleyonoh.com`)"
+      - "traefik.http.routers.healthcare-slot-optimizer.entrypoints=websecure"
+      - "traefik.http.routers.healthcare-slot-optimizer.tls.certresolver=letsencrypt"
+      - "traefik.http.services.healthcare-slot-optimizer.loadbalancer.server.port=8000"
     deploy:
       resources:
         limits:

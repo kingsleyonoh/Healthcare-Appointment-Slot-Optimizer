@@ -1,4 +1,4 @@
-# {{PROJECT_NAME}} — Coding Standards: Domain & Production
+# Healthcare Appointment Slot Optimizer — Coding Standards: Domain & Production
 
 > Part 3 of 3. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_TESTING.md`
 

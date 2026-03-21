@@ -1,4 +1,4 @@
-# {{PROJECT_NAME}} — Coding Standards
+# Healthcare Appointment Slot Optimizer — Coding Standards
 
 > Part 1 of 3. Also loaded: `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_DOMAIN.md`
 
@@ -67,7 +67,16 @@ You have a vast library of specialized skills available. **Use them proactively*
 | `chore` | Tooling, workflows, config, dependencies |
 | `style` | Formatting, whitespace, no logic change |
 
-**Scope** = the module, app, or area affected (e.g., `pricing`, `auth`, `db`, `workflows`).
+**Scope** = the module or area affected. Valid scopes for this project:
+- `optimizer` — slot computation, scoring, constraints
+- `booking` — booking service, cancellation, backfill
+- `api` — routes, endpoints, middleware
+- `db` — models, migrations, session, seed data
+- `config` — settings, environment, config loader
+- `auth` — API key middleware
+- `lib` — shared utilities (time_utils, logger)
+- `deploy` — Dockerfile, docker-compose, CI/CD
+- `workflows` — `.agent/workflows/` changes
 
 **Rules:**
 - Subject line max 72 characters.
@@ -77,13 +86,32 @@ You have a vast library of specialized skills available. **Use them proactively*
 
 **Examples:**
 ```
-feat(pricing): implement UndercutBracket model with tenant FK
-fix(sending): guard against None accounts on sending page
-refactor(db): extract monitoring queries into dedicated mixin
-test(replies): add 11 tests for intent classification edge cases
+feat(db): implement Provider and Room models with UUID PKs
+feat(optimizer): add availability window calculator
+feat(booking): implement idempotent booking with request_id
+fix(api): handle concurrent booking conflict with 409 response
+refactor(optimizer): extract buffer time logic to constraints module
+test(booking): add 8 tests for cancellation backfill candidates
 docs(context): update CODEBASE_CONTEXT.md with new schema tables
-chore(workflows): add sprint velocity to resume workflow
+chore(deploy): customize Dockerfile for Python/FastAPI
 ```
+
+## Architecture — Dependency Hierarchy (PRD Section 9)
+
+```
+lib/          → nothing (leaf modules)
+db/           → lib/
+optimizer/    → lib/, db/
+booking/      → lib/, db/
+api/          → optimizer/, booking/, db/, lib/
+main.py       → api/, db/, config
+```
+
+**Rules:**
+- Lower layers NEVER import from higher layers.
+- `lib/` and `db/` must NOT import from `optimizer/`, `booking/`, or `api/`.
+- `optimizer/` and `booking/` must NOT import from `api/`.
+- All cross-module access goes through function parameters, not direct imports up the chain.
 
 ## AI Discipline Rules (Prevent Common AI Failures)
 

@@ -1,44 +1,43 @@
 # --- Stage 1: Builder ---
-# BOOTSTRAP NOTE: Replace base image and build commands for your stack.
-# Examples:
-#   Go:     golang:1.23-alpine → go build -o /app ./cmd/...
-#   Node:   node:22-alpine → npm ci && npm run build
-#   Python: python:3.12-slim → pip install -r requirements.txt
-
-FROM node:22-alpine AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy dependency files first (cache layer)
-COPY package*.json ./
-RUN npm ci --only=production
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# --- Stage 2: Production ---
+FROM python:3.12-slim AS production
+
+# Security: non-root user
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
+# Runtime dependency
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 curl && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
 # Copy source
 COPY . .
-
-# Build (remove if not needed, e.g. plain Node server)
-RUN npm run build
-
-# --- Stage 2: Production ---
-FROM node:22-alpine AS production
-
-# Security: non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
-WORKDIR /app
-
-# Copy only what's needed from builder
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
 
 # Switch to non-root
 USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:8000/health || exit 1
 
-EXPOSE 3000
+EXPOSE 8000
 
-CMD ["node", "dist/index.js"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

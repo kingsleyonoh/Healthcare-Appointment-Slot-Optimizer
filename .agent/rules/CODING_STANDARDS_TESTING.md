@@ -1,4 +1,4 @@
-# {{PROJECT_NAME}} — Coding Standards: Testing
+# Healthcare Appointment Slot Optimizer — Coding Standards: Testing
 
 > Part 2 of 3. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_DOMAIN.md`
 
