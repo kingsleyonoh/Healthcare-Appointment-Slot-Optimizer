@@ -2,14 +2,44 @@
 
 ``create_app()`` builds and returns the fully configured FastAPI
 instance with middleware, error handlers, and routes registered.
+
+Lifespan handles APScheduler start/stop and database engine disposal.
 """
 
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
+from src.api.health import router as health_router
+from src.db.session import get_engine
 from src.lib.errors import register_error_handlers
 from src.lib.logger import configure_logging
+from src.lib.scheduler import create_scheduler
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Manage startup and shutdown resources."""
+    # --- Startup ---
+    scheduler = create_scheduler()
+    app.state.scheduler = scheduler
+    scheduler.start()
+    logger.info("APScheduler started")
+
+    yield
+
+    # --- Shutdown ---
+    scheduler.shutdown(wait=False)
+    logger.info("APScheduler stopped")
+
+    engine = get_engine()
+    await engine.dispose()
+    logger.info("Database engine disposed")
 
 
 def create_app() -> FastAPI:
@@ -22,6 +52,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Healthcare Appointment Slot Optimizer",
         version="0.1.0",
+        lifespan=_lifespan,
         docs_url="/docs" if settings.ENV != "production" else None,
         redoc_url=None,
     )
@@ -29,10 +60,8 @@ def create_app() -> FastAPI:
     # --- Error handlers ---
     register_error_handlers(app)
 
-    # --- Health route (no auth) ---
-    @app.get("/api/health", tags=["system"])
-    async def health():
-        return {"status": "healthy", "version": app.version}
+    # --- Routers ---
+    app.include_router(health_router)
 
     return app
 

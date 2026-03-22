@@ -2,6 +2,24 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
+
+
+class TestHealthDatabaseConnectivity:
+    """Verify health endpoint reports real PostgreSQL status."""
+
+    @pytest.mark.asyncio
+    async def test_health_database_connected(self):
+        """Health endpoint should report 'connected' when PostgreSQL is reachable."""
+        from src.main import create_app
+
+        app = create_app()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/health")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["database"] == "connected"
 
 
 class TestHealthEndpoint:
