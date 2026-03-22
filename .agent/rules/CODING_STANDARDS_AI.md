@@ -1,0 +1,79 @@
+# Healthcare Appointment Slot Optimizer — AI Discipline & Skill Orchestration
+
+> Part 4 of 4. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_DOMAIN.md`
+
+## Skill Selection & Orchestration
+You have a vast library of specialized skills available. **Use them proactively** — don't wing it when a skill exists for the task.
+
+### How Skill Selection Works
+1. **Before starting any implementation task**, mentally scan your available skills for matches.
+2. If a relevant skill exists, **read its SKILL.md first** using `view_file`, then follow its guidance.
+3. **Announce your choice**: *"I am invoking the [skill-name] skill to ensure this follows best practices."*
+4. When multiple skills could apply, invoke the most specific one (e.g., `react-patterns` over `frontend-design` for a React component).
+5. **When in doubt, invoke the skill.** Reading a SKILL.md costs 30 seconds. Getting it wrong costs hours.
+
+### When to Invoke Skills (Non-Negotiable)
+- **Building with a specific framework/library** → find the matching skill (React, Next.js, Django, FastAPI, etc.)
+- **Touching security** (auth, input validation, secrets, API exposure) → invoke a security skill
+- **Writing tests** → invoke the testing skill for your language/framework
+- **Designing a database schema or API** → invoke the design/architecture skill
+- **Debugging a bug** → invoke `systematic-debugging` before guessing
+- **Deploying or containerizing** → invoke the deployment skill for your platform
+- **Integrating a payment provider, email service, or external API** → check for a dedicated skill first
+- **Working with AI/LLM features** → invoke the relevant AI skill (RAG, agents, prompts)
+- **Writing documentation** → invoke the documentation skill for the format you need
+- **Unfamiliar domain or new library** → research skill first, then build
+
+### What NOT to Do
+- ❌ Skip skills because "I already know this" — the skill may have guardrails you'd miss
+- ❌ Hardcode patterns from memory when a skill has the latest best practices
+- ❌ Use a generic approach when a project-specific skill exists
+
+## AI Discipline Rules (Prevent Common AI Failures)
+
+### No Scope Creep
+- **ONLY implement what's asked or what's next in `docs/progress.md`.** Do not add features, helpers, utilities, or "nice-to-haves" that aren't in the spec.
+- If you think something SHOULD be added, ASK the user first. Never add it silently.
+
+### No Phantom Dependencies
+- **NEVER import a package that isn't in the dependency file** (requirements.txt / package.json / etc). Add it FIRST, then use it.
+- Before using any library method, **verify it exists** in that version. Don't hallucinate API methods.
+
+### No Placeholder Code
+- **NEVER write `# TODO`, `pass`, `...`, or `NotImplementedError`** as final code. Every function must be fully implemented before marking the task done.
+
+### No Hallucinated APIs
+- Before calling any external library method, **verify the method exists** by checking docs or the installed package.
+- If unsure, say so and check rather than assuming.
+
+### No Silent Failures
+- **NEVER write code that swallows errors silently.** Every `except`/`catch` block must either re-raise, log, or return a meaningful error.
+- `except: pass` / `catch {}` is permanently BANNED.
+
+### No Over-Engineering
+- Match the spec's complexity level. No abstractions without 2+ concrete implementations.
+- Build for the scale defined in the spec, not 100x that.
+
+### Verify Before Claiming
+- **NEVER say "done" or "all tests pass" without actually running the tests** and showing the output.
+- **NEVER say "this follows the spec" without having read the relevant section** in this session.
+- If you haven't read a file in this conversation, you don't know what's in it. Read it first.
+
+### Full Read Rule (CRITICAL — Prevents Context Loss)
+- **When ANY workflow instructs you to "read" a file, you MUST read the ENTIRE file from first line to last line.**
+- If the file is longer than your read limit, make multiple sequential read calls until **every line has been read.**
+- Do NOT read a partial subset and assume you understand the rest.
+
+### Read Shared Foundation Before Coding (CRITICAL — Prevents Duplication)
+- Before writing ANY new utility, helper, middleware, handler, component, or shared pattern, read every file listed in the **Shared Foundation** table in `CODEBASE_CONTEXT.md`.
+- If a pattern, function, or module already exists there — **USE IT.** Do not recreate it.
+
+### Workflow Discipline
+- **Max 25 workflow files** in `.agent/workflows/`. If approaching 25, retire rarely-used workflows or convert procedural knowledge to global Antigravity skills.
+
+### Search Before Creating (CRITICAL — Prevents Duplicate Code)
+- **Before creating ANY new file, function, class, or utility**, search the codebase first:
+  1. `grep_search` for the function/class name
+  2. `find_by_name` for the file name
+  3. Check relevant module exports / `__init__` files
+- If it already exists, **USE IT**. Do not recreate it.

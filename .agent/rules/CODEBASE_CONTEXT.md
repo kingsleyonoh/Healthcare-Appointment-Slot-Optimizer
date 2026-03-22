@@ -1,6 +1,6 @@
 # Healthcare Appointment Slot Optimizer — Codebase Context
 
-> Last updated: 2026-03-21 (Phase 0 sync)
+> Last updated: 2026-03-22 (Phase 2 sync — Configuration API)
 > Template synced: 2026-03-21
 
 ## Tech Stack
@@ -23,60 +23,63 @@
 ```
 appointment-slot-optimizer/
 ├── src/
-│   ├── main.py                      # FastAPI app entry point
+│   ├── main.py                      # FastAPI app factory + lifespan
 │   ├── config.py                    # Pydantic Settings
-│   ├── optimizer/
-│   │   ├── engine.py                # Slot computation logic
-│   │   ├── scorer.py                # Slot quality scoring
-│   │   └── constraints.py           # Constraint evaluation
-│   ├── booking/
-│   │   ├── service.py               # Booking + cancellation logic
-│   │   └── backfill.py              # Cancellation backfill
+│   ├── optimizer/                   # (Phase 3 — not yet implemented)
+│   ├── booking/                     # (Phase 4 — not yet implemented)
 │   ├── api/
-│   │   ├── slots.py                 # GET /api/slots
-│   │   ├── bookings.py              # Booking CRUD
-│   │   ├── schedule.py              # Schedule view
-│   │   ├── config_routes.py         # Provider/room/type management
-│   │   ├── health.py                # Health + stats
+│   │   ├── config_routes.py         # Provider/room/type/availability/rules CRUD
+│   │   ├── health.py                # GET /api/health (public)
+│   │   ├── schemas/
+│   │   │   └── config_schemas.py    # Pydantic models + RoomType enum
 │   │   └── middleware/
-│   │       ├── auth.py              # API key validation
-│   │       └── errors.py            # Error handler
+│   │       ├── auth.py              # API key validation dependency
+│   │       └── rate_limiter.py      # Sliding-window rate limiter
 │   ├── db/
-│   │   ├── session.py               # Async SQLAlchemy session
-│   │   ├── models.py                # SQLAlchemy models
-│   │   └── seed.py                  # Development seed data
+│   │   ├── session.py               # Async engine (lru_cache) + session factory
+│   │   └── models.py                # SQLAlchemy models (6 tables)
 │   └── lib/
-│       ├── time_utils.py            # Time interval math
-│       └── logger.py                # Structured logging
+│       ├── errors.py                # AppError + JSON error envelope
+│       ├── time_utils.py            # Interval math for slot computation
+│       ├── logger.py                # Structured logging (structlog)
+│       └── scheduler.py             # APScheduler factory
 ├── alembic/
-│   └── versions/
+│   └── versions/                    # Initial migration (all 6 tables)
 ├── tests/
+│   ├── conftest.py                  # Shared fixtures (async engine/session)
 │   ├── unit/
-│   │   ├── test_optimizer.py
-│   │   ├── test_scorer.py
-│   │   └── test_booking.py
-│   ├── integration/
-│   │   ├── test_slots_api.py
-│   │   └── test_bookings_api.py
-│   └── conftest.py
+│   │   ├── test_auth.py
+│   │   ├── test_config.py
+│   │   ├── test_errors.py
+│   │   ├── test_health.py
+│   │   ├── test_logger.py
+│   │   ├── test_rate_limiter.py
+│   │   ├── test_scheduler.py
+│   │   └── test_time_utils.py
+│   └── integration/
+│       ├── test_smoke.py            # DB connectivity check
+│       ├── test_models.py           # ORM model CRUD
+│       ├── test_health.py           # Health endpoint integration
+│       └── test_config_api.py       # Config API (23 tests)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── pyproject.toml
 ├── alembic.ini
 ├── .env.example
 └── docs/
-    └── prd.md
+    └── appointment-slot-optimizer_prd.md
 ```
 
 ## Key Modules
 
 | Module | Purpose | Key Files |
 |--------|---------|-----------|
-| optimizer | Computes available slots from constraints | `src/optimizer/engine.py`, `src/optimizer/scorer.py`, `src/optimizer/constraints.py` |
-| booking | Creates/cancels bookings with conflict prevention | `src/booking/service.py`, `src/booking/backfill.py` |
-| api | HTTP layer — routes, middleware, auth | `src/api/slots.py`, `src/api/bookings.py`, `src/api/middleware/` |
-| db | Database models, session, seeds | `src/db/models.py`, `src/db/session.py`, `src/db/seed.py` |
-| lib | Shared utilities | `src/lib/time_utils.py`, `src/lib/logger.py` |
+| api | HTTP layer — config CRUD, health, auth middleware | `src/api/config_routes.py`, `src/api/health.py`, `src/api/middleware/` |
+| api/schemas | Pydantic request/response models | `src/api/schemas/config_schemas.py` |
+| db | Database models + async session factory | `src/db/models.py`, `src/db/session.py` |
+| lib | Shared utilities — errors, logging, time, scheduler | `src/lib/errors.py`, `src/lib/logger.py`, `src/lib/time_utils.py`, `src/lib/scheduler.py` |
+| optimizer | Slot computation (Phase 3 — not yet implemented) | `src/optimizer/` |
+| booking | Booking service (Phase 4 — not yet implemented) | `src/booking/` |
 
 ## Database Schema
 
@@ -144,6 +147,8 @@ appointment-slot-optimizer/
 | Date | Area | Gotcha | Discovered In |
 |------|------|--------|---------------|
 | 2026-03-21 | Docker | Native PostgreSQL runs on port 5432; Docker Compose maps to **5434** to coexist. `DATABASE_URL` must use port 5434 for local dev. | Phase 0 setup |
+| 2026-03-22 | Tests | `async_engine` fixture MUST be **function-scoped** (not session-scoped). Session-scoped causes asyncpg `InterfaceError: another operation is in progress` on 2nd+ test. | Phase 2 config API |
+| 2026-03-22 | Tests | `get_engine` uses `@lru_cache`. The lifespan's `engine.dispose()` poisons it — `_clear_engine_cache` autouse fixture clears it between tests. | Phase 2 config API |
 
 ## Shared Foundation (MUST READ before any implementation)
 
@@ -153,13 +158,15 @@ appointment-slot-optimizer/
 | Category | File(s) | What it establishes |
 |----------|---------|-------------------|
 | Config | `src/config.py` | Pydantic Settings, all env vars, defaults |
-| DB session | `src/db/session.py` | Async SQLAlchemy engine + session factory |
-| DB models | `src/db/models.py` | All SQLAlchemy models, base class, enums |
-| Error handling | `src/api/middleware/errors.py` | Centralized error types + HTTP error format |
+| DB session | `src/db/session.py` | Async SQLAlchemy engine (lru_cache) + session factory |
+| DB models | `src/db/models.py` | All SQLAlchemy models, base class, 6 tables |
+| Error handling | `src/lib/errors.py` | AppError class + JSON error envelope handler |
 | Auth middleware | `src/api/middleware/auth.py` | API key validation dependency |
+| Schemas | `src/api/schemas/config_schemas.py` | Pydantic models for all config entities + RoomType enum |
 | Logger | `src/lib/logger.py` | Structured logging with structlog |
 | Time utils | `src/lib/time_utils.py` | Interval math for slot computation |
-| Test fixtures | `tests/conftest.py` | Shared pytest fixtures, test DB setup |
+| Scheduler | `src/lib/scheduler.py` | APScheduler BackgroundScheduler factory |
+| Test fixtures | `tests/conftest.py` | Async engine/session fixtures with rollback isolation |
 
 ## Deep References
 
@@ -169,8 +176,9 @@ appointment-slot-optimizer/
 |-------|--------------|
 | Slot optimizer logic | `src/optimizer/` |
 | Booking service | `src/booking/` |
-| API routes | `src/api/` |
+| API routes & CRUD | `src/api/config_routes.py`, `src/api/health.py` |
+| Pydantic schemas | `src/api/schemas/config_schemas.py` |
 | Database models | `src/db/models.py` |
 | Test patterns | `tests/` |
-| Deployment config | `Dockerfile`, `docker-compose.prod.yml` |
+| Deployment config | `Dockerfile`, `docker-compose.yml` |
 | Migrations | `alembic/versions/` |
