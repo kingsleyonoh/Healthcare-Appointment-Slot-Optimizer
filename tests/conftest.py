@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 
 def _load_dotenv() -> None:
@@ -43,23 +43,41 @@ def database_url() -> str:
     return get_test_database_url()
 
 
-@pytest.fixture(scope="session")
-def async_engine(database_url: str):
-    """Create an async SQLAlchemy engine for tests (session-scoped)."""
+@pytest.fixture
+async def async_engine(database_url: str):
+    """Create a function-scoped async engine for full test isolation."""
     engine = create_async_engine(database_url, echo=False)
     yield engine
-    # Engine disposal is handled by the event loop cleanup
+    await engine.dispose()
 
 
 @pytest.fixture
 async def async_session(async_engine) -> AsyncSession:
-    """Provide an async DB session with automatic rollback after each test."""
-    session_factory = async_sessionmaker(
-        async_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-    async with session_factory() as session:
-        async with session.begin():
+    """Provide an async DB session with automatic rollback after each test.
+
+    Opens a connection, starts a transaction, binds a session to it, and
+    rolls the transaction back after the test finishes — leaving the DB
+    unchanged.
+    """
+    async with async_engine.connect() as conn:
+        trans = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False)
+        try:
             yield session
-            await session.rollback()
+        finally:
+            await session.close()
+            await trans.rollback()
+
+
+@pytest.fixture(autouse=True)
+def _clear_engine_cache():
+    """Clear the lru_cache on get_engine between tests.
+
+    Without this, the lifespan's ``engine.dispose()`` poisons the cache
+    and subsequent tests get ``RuntimeError: Event loop is closed``.
+    """
+    from src.db.session import get_engine
+
+    get_engine.cache_clear()
+    yield
+    get_engine.cache_clear()
