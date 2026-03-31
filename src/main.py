@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from src.api.booking_routes import router as booking_router
 from src.api.config_routes import router as config_router
 from src.api.health import router as health_router
 from src.api.slots import router as slots_router
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(config_router)
     app.include_router(slots_router)
+    app.include_router(booking_router)
 
     return app
 

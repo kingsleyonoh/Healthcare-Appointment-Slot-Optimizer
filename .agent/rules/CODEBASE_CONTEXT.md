@@ -167,6 +167,8 @@ appointment-slot-optimizer/
 | Time utils | `src/lib/time_utils.py` | Interval math for slot computation |
 | Scheduler | `src/lib/scheduler.py` | APScheduler BackgroundScheduler factory |
 | Pagination | `src/lib/pagination.py` | PaginationParams + get_pagination dependency (page/page_size/offset) |
+| Booking service | `src/booking/service.py` | create_booking() with idempotency, validation, conflict prevention |
+| Booking schemas | `src/api/schemas/booking_schemas.py` | BookingCreate, BookingOut Pydantic models |
 | Seed data | `src/db/seed.py` | Idempotent dev seed: 5 providers, 8 rooms, 6 types, ~220 bookings |
 | Test fixtures | `tests/conftest.py` | Async engine/session fixtures with rollback isolation |
 
