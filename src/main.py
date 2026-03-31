@@ -15,6 +15,7 @@ from fastapi import FastAPI
 
 from src.api.config_routes import router as config_router
 from src.api.health import router as health_router
+from src.api.slots import router as slots_router
 from src.db.session import get_engine
 from src.lib.errors import register_error_handlers
 from src.lib.logger import configure_logging
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     # --- Routers ---
     app.include_router(health_router)
     app.include_router(config_router)
+    app.include_router(slots_router)
 
     return app
 

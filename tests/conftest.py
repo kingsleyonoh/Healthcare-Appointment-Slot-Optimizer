@@ -81,3 +81,24 @@ def _clear_engine_cache():
     get_engine.cache_clear()
     yield
     get_engine.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+async def _clean_db(database_url):
+    """Truncate all application tables before each test.
+
+    Prevents stale data from previous runs from polluting test isolation.
+    Uses TRUNCATE ... CASCADE for foreign-key safety.
+    """
+    from sqlalchemy import text
+
+    engine = create_async_engine(database_url, echo=False)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "TRUNCATE TABLE bookings, overbooking_rules, "
+                "provider_availability, appointment_types, rooms, providers "
+                "CASCADE"
+            )
+        )
+    await engine.dispose()
