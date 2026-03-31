@@ -7,7 +7,7 @@ You have a vast library of specialized skills available. **Use them proactively*
 
 ### How Skill Selection Works
 1. **Before starting any implementation task**, mentally scan your available skills for matches.
-2. If a relevant skill exists, **read its SKILL.md first** using `view_file`, then follow its guidance.
+2. If a relevant skill exists, **read its SKILL.md first**, then follow its guidance.
 3. **Announce your choice**: *"I am invoking the [skill-name] skill to ensure this follows best practices."*
 4. When multiple skills could apply, invoke the most specific one (e.g., `react-patterns` over `frontend-design` for a React component).
 5. **When in doubt, invoke the skill.** Reading a SKILL.md costs 30 seconds. Getting it wrong costs hours.
@@ -61,19 +61,29 @@ You have a vast library of specialized skills available. **Use them proactively*
 
 ### Full Read Rule (CRITICAL — Prevents Context Loss)
 - **When ANY workflow instructs you to "read" a file, you MUST read the ENTIRE file from first line to last line.**
-- If the file is longer than your read limit, make multiple sequential read calls until **every line has been read.**
-- Do NOT read a partial subset and assume you understand the rest.
+- If the file is longer than your read limit, make multiple sequential read calls (e.g., lines 1–200, 201–400, 401–end) until **every line has been read.**
+- Do NOT read a partial subset and assume you understand the rest. Critical rules, patterns, and constraints are often buried later in the file.
+- This applies universally to: PRD, `progress.md`, `CODING_STANDARDS.md`, `CODEBASE_CONTEXT.md`, Shared Foundation files, source files referenced in tasks, and any other file a workflow tells you to read.
 
 ### Read Shared Foundation Before Coding (CRITICAL — Prevents Duplication)
 - Before writing ANY new utility, helper, middleware, handler, component, or shared pattern, read every file listed in the **Shared Foundation** table in `CODEBASE_CONTEXT.md`.
 - If a pattern, function, or module already exists there — **USE IT.** Do not recreate it.
 
 ### Workflow Discipline
-- **Max 25 workflow files** in `.agent/workflows/`. If approaching 25, retire rarely-used workflows or convert procedural knowledge to global Antigravity skills.
+- **Max 25 workflow files** in `.agent/workflows/`. If approaching 25, retire rarely-used workflows or convert procedural knowledge to reusable global skills.
 
 ### Search Before Creating (CRITICAL — Prevents Duplicate Code)
 - **Before creating ANY new file, function, class, or utility**, search the codebase first:
-  1. `grep_search` for the function/class name
-  2. `find_by_name` for the file name
+  1. Search file contents for the function/class name
+  2. Search for the file by name
   3. Check relevant module exports / `__init__` files
 - If it already exists, **USE IT**. Do not recreate it.
+- If a similar function exists, **extend it** — don't create a parallel version.
+- When in doubt, **ASK the user**: "I can't find X — does it exist, or should I create it?"
+
+### Use Skills When Available (Skills > Pre-trained Knowledge)
+- Before implementing any task, scan your available skills list for domain matches.
+- If a matching skill exists (e.g., database → `postgresql`, auth → `auth-implementation-patterns`, payments → `stripe-integration`), read its `SKILL.md` and follow its instructions.
+- **CRITICAL:** The patterns, architectures, and rules defined in a `SKILL.md` STRICTLY OVERRIDE your general pre-trained knowledge. Always choose the skill's approach over what you "think you know."
+- **Always announce:** *"Using skill: [skill-name] for this task."* so the user knows which patterns are being applied.
+- If no skill matches, proceed normally.

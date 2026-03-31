@@ -115,64 +115,43 @@ If the project has no external services (CLI tool, library, static site), this p
 ### Why This Matters
 A mock that returns `{ user_id: 1 }` will pass even when the real column is `userId`. A mock that returns success will pass even when the real constraint rejects your data. Mocks test your ASSUMPTIONS about the service. Live tests test REALITY.
 
+### Common Mock Violations (DO NOT DO THESE)
+- ❌ Mocking your database client to return fake rows — hit the real database
+- ❌ Mocking your own API routes with `nock`/`msw` — call the real endpoint via test client
+- ❌ Using an in-memory SQLite when production uses PostgreSQL — use the real PostgreSQL
+- ❌ Mocking Redis/cache when it's running in Docker — connect to the real instance
+- ✅ Mocking Stripe's charge API — you don't want to charge real money in tests
+- ✅ Mocking SendGrid — you don't want to send real emails in tests
+- ✅ Mocking an external API with rate limits — you don't control their uptime
+
 ### Test Cleanup
 - Each test MUST clean up after itself (delete rows, reset state)
 - Use transactions with rollback when possible for speed
 
-## Component Testing (React Testing Library)
+## Backend API & Integration Testing
 
-> This section applies to projects with a React frontend. If the project has no UI, skip this section entirely.
+> This section applies to backend-only projects (APIs, workers, CLI tools).
 
-### When to Write Component Tests
-- Every **interactive component**: forms, dialogs, accordions, dropdowns, buttons with click handlers
-- Every component with **conditional rendering** (show/hide logic, loading states, error states)
-- Any component where a bug would **block user interaction** (can't type, can't click, can't submit)
-- **Not required for**: pure display components with no interactivity (static text, icons, layout wrappers)
+### When to Write API Integration Tests
+- Every **API endpoint**: test request → response cycle with real HTTP semantics
+- Every **background job/worker**: test job execution with actual service dependencies
+- Every **middleware**: test request interception, auth guards, validation layers
 
 ### What to Test
 | Priority | Test This | Example |
 |----------|-----------|---------|
-| 1 | User interactions | Click button → dialog opens; type in input → value updates |
-| 2 | Conditional rendering | Error state shows message; loading state shows spinner |
-| 3 | Form validation feedback | Submit empty form → validation errors appear |
-| 4 | Accessible roles & labels | Button has correct label; form inputs are labeled |
-| 5 | Callback invocation | onSubmit called with correct data; onCancel fires |
+| 1 | Request/response cycle | POST /api/providers → 201, returns created provider |
+| 2 | Input validation | Missing required field → 400 with specific error |
+| 3 | Auth & authorization | No API key → 401; invalid key → 401 |
+| 4 | Error handling | Invalid ID → 404; DB constraint → 409 |
+| 5 | Edge cases | Empty body, oversized payload, duplicate submission |
 
-### What NOT to Test
-- **Styling** — don't assert on classNames, colors, or CSS
-- **Internal state** — don't reach into `useState` values; test what the USER sees
-- **Snapshot tests** — they create noise and break on every minor change. Test behavior instead.
-- **Implementation details** — don't test that a specific hook was called; test the outcome
-
-### RTL Query Priority (follow this order)
-1. `getByRole` — accessible role (button, textbox, dialog) — **always prefer this**
-2. `getByLabelText` — form inputs with labels
-3. `getByText` — visible text content
-4. `getByPlaceholderText` — placeholder fallback
-5. `getByTestId` — **last resort only** — used when no semantic query works
-
-### RTL Best Practices
-- Use `userEvent` over `fireEvent` — it simulates real browser behavior (focus, blur, keyboard)
-- Use `screen` for queries — not destructured render result
-- Use `waitFor` for async operations — never `setTimeout`
-- Use `within` to scope queries inside a container (e.g., within a specific dialog)
-- Wrap state updates in `act()` only if React warns you — RTL handles this automatically in most cases
+### API Testing Patterns
+- Use FastAPI's `TestClient` or httpx `AsyncClient` for testing
+- Test full request lifecycle — serialization, middleware, handler, response
+- Assert on status codes, response body structure, AND headers where relevant
+- Test pagination, filtering, and sorting with real DB rows
 
 ### File Naming & Location
-- Name: `ComponentName.test.tsx` — co-located next to the component file
-- Example: `src/components/ProductFormDialog.test.tsx`
-- Group test utilities in `src/test/helpers.ts` if shared across component tests
-
-### Minimum Coverage Rule
-Every interactive React component MUST have at least:
-- **1 happy-path interaction test** (user performs the primary action successfully)
-- **1 error/edge-case test** (empty submission, missing data, disabled state)
-- If a component has 0 tests and it has click/type/submit handlers → it's a bug waiting to happen
-
-### Setup (Vitest + jsdom)
-Component tests run in Node.js with a simulated DOM — no browser needed. Typical setup:
-- `vitest` as test runner (or `jest` if the project already uses it)
-- `@testing-library/react` for component rendering and queries
-- `@testing-library/user-event` for simulating user interactions
-- `jsdom` or `happy-dom` as the test environment
-- Configure in `vitest.config.ts`: `environment: 'jsdom'`
+- Name: `test_module_name.py` — in `tests/` mirror structure
+- Group shared test helpers in `tests/conftest.py` or `tests/factories.py`
