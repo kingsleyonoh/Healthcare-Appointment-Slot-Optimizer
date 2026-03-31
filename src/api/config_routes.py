@@ -38,22 +38,13 @@ from src.db.models import (
 )
 from src.db.session import get_session
 from src.lib.errors import AppError
+from src.lib.pagination import PaginationParams, get_pagination
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 router = APIRouter(prefix="/api", tags=["configuration"])
 _auth = create_api_key_dependency(settings.api_keys_list)
-
-MAX_PAGE_SIZE = 100
-DEFAULT_PAGE_SIZE = 25
-
-
-def _paginate(page: int, page_size: int) -> tuple[int, int]:
-    """Normalise and cap pagination params, return (offset, limit)."""
-    page = max(page, 1)
-    page_size = max(min(page_size, MAX_PAGE_SIZE), 1)
-    return (page - 1) * page_size, page_size
 
 
 # ---------------------------------------------------------------------------
@@ -75,23 +66,24 @@ async def create_provider(
 
 @router.get("/providers")
 async def list_providers(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1),
+    pagination: PaginationParams = Depends(get_pagination),
     session: AsyncSession = Depends(get_session),
     _key: str = _auth,
 ) -> PaginatedResponse:
-    offset, limit = _paginate(page, page_size)
     total = (await session.execute(select(func.count(Provider.id)))).scalar_one()
     rows = (
         await session.execute(
-            select(Provider).order_by(Provider.created_at).offset(offset).limit(limit)
+            select(Provider)
+            .order_by(Provider.created_at)
+            .offset(pagination.offset)
+            .limit(pagination.page_size)
         )
     ).scalars().all()
     return PaginatedResponse(
         items=[ProviderOut.model_validate(r).model_dump(mode="json") for r in rows],
         total=total,
-        page=page,
-        page_size=limit,
+        page=pagination.page,
+        page_size=pagination.page_size,
     )
 
 
@@ -127,23 +119,24 @@ async def create_room(
 
 @router.get("/rooms")
 async def list_rooms(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1),
+    pagination: PaginationParams = Depends(get_pagination),
     session: AsyncSession = Depends(get_session),
     _key: str = _auth,
 ) -> PaginatedResponse:
-    offset, limit = _paginate(page, page_size)
     total = (await session.execute(select(func.count(Room.id)))).scalar_one()
     rows = (
         await session.execute(
-            select(Room).order_by(Room.created_at).offset(offset).limit(limit)
+            select(Room)
+            .order_by(Room.created_at)
+            .offset(pagination.offset)
+            .limit(pagination.page_size)
         )
     ).scalars().all()
     return PaginatedResponse(
         items=[RoomOut.model_validate(r).model_dump(mode="json") for r in rows],
         total=total,
-        page=page,
-        page_size=limit,
+        page=pagination.page,
+        page_size=pagination.page_size,
     )
 
 
@@ -181,12 +174,10 @@ async def create_appointment_type(
 
 @router.get("/appointment-types")
 async def list_appointment_types(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1),
+    pagination: PaginationParams = Depends(get_pagination),
     session: AsyncSession = Depends(get_session),
     _key: str = _auth,
 ) -> PaginatedResponse:
-    offset, limit = _paginate(page, page_size)
     total = (
         await session.execute(select(func.count(AppointmentType.id)))
     ).scalar_one()
@@ -194,8 +185,8 @@ async def list_appointment_types(
         await session.execute(
             select(AppointmentType)
             .order_by(AppointmentType.created_at)
-            .offset(offset)
-            .limit(limit)
+            .offset(pagination.offset)
+            .limit(pagination.page_size)
         )
     ).scalars().all()
     return PaginatedResponse(
@@ -203,8 +194,8 @@ async def list_appointment_types(
             AppointmentTypeOut.model_validate(r).model_dump(mode="json") for r in rows
         ],
         total=total,
-        page=page,
-        page_size=limit,
+        page=pagination.page,
+        page_size=pagination.page_size,
     )
 
 
@@ -243,12 +234,10 @@ async def create_availability(
 @router.get("/availability")
 async def list_availability(
     provider_id: uuid.UUID | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1),
+    pagination: PaginationParams = Depends(get_pagination),
     session: AsyncSession = Depends(get_session),
     _key: str = _auth,
 ) -> PaginatedResponse:
-    offset, limit = _paginate(page, page_size)
     base = select(ProviderAvailability)
     count_q = select(func.count(ProviderAvailability.id))
     if provider_id:
@@ -258,8 +247,8 @@ async def list_availability(
     rows = (
         await session.execute(
             base.order_by(ProviderAvailability.created_at)
-            .offset(offset)
-            .limit(limit)
+            .offset(pagination.offset)
+            .limit(pagination.page_size)
         )
     ).scalars().all()
     return PaginatedResponse(
@@ -267,8 +256,8 @@ async def list_availability(
             AvailabilityOut.model_validate(r).model_dump(mode="json") for r in rows
         ],
         total=total,
-        page=page,
-        page_size=limit,
+        page=pagination.page,
+        page_size=pagination.page_size,
     )
 
 
@@ -292,12 +281,10 @@ async def create_overbooking_rule(
 @router.get("/overbooking-rules")
 async def list_overbooking_rules(
     provider_id: uuid.UUID | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1),
+    pagination: PaginationParams = Depends(get_pagination),
     session: AsyncSession = Depends(get_session),
     _key: str = _auth,
 ) -> PaginatedResponse:
-    offset, limit = _paginate(page, page_size)
     base = select(OverbookingRule)
     count_q = select(func.count(OverbookingRule.id))
     if provider_id:
@@ -306,7 +293,9 @@ async def list_overbooking_rules(
     total = (await session.execute(count_q)).scalar_one()
     rows = (
         await session.execute(
-            base.order_by(OverbookingRule.created_at).offset(offset).limit(limit)
+            base.order_by(OverbookingRule.created_at)
+            .offset(pagination.offset)
+            .limit(pagination.page_size)
         )
     ).scalars().all()
     return PaginatedResponse(
@@ -314,6 +303,6 @@ async def list_overbooking_rules(
             OverbookingRuleOut.model_validate(r).model_dump(mode="json") for r in rows
         ],
         total=total,
-        page=page,
-        page_size=limit,
+        page=pagination.page,
+        page_size=pagination.page_size,
     )

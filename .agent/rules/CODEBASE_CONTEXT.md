@@ -166,6 +166,8 @@ appointment-slot-optimizer/
 | Logger | `src/lib/logger.py` | Structured logging with structlog |
 | Time utils | `src/lib/time_utils.py` | Interval math for slot computation |
 | Scheduler | `src/lib/scheduler.py` | APScheduler BackgroundScheduler factory |
+| Pagination | `src/lib/pagination.py` | PaginationParams + get_pagination dependency (page/page_size/offset) |
+| Seed data | `src/db/seed.py` | Idempotent dev seed: 5 providers, 8 rooms, 6 types, ~220 bookings |
 | Test fixtures | `tests/conftest.py` | Async engine/session fixtures with rollback isolation |
 
 ## Deep References
