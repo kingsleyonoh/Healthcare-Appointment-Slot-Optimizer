@@ -1,12 +1,13 @@
 """Unit tests for the booking service layer."""
 
+import uuid
 from datetime import date, time, timedelta
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.booking.service import create_booking
+from src.booking.service import cancel_booking, create_booking, get_booking, list_bookings
 from src.db.models import (
     AppointmentType,
     Booking,
@@ -361,3 +362,200 @@ class TestBookingValidation:
                 start_time=time(9, 0),
             )
         assert exc_info.value.code == "VALIDATION_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# Helpers — create a confirmed booking for cancel/list/get tests
+# ---------------------------------------------------------------------------
+
+
+async def _create_confirmed_booking(
+    session: AsyncSession, request_id: str, start_hour: int = 9, **overrides
+) -> Booking:
+    """Seed provider/room/type/availability and create a confirmed booking."""
+    provider = overrides.pop("provider", None) or await _seed_provider(session)
+    room = overrides.pop("room", None) or await _seed_room(session)
+    appt_type = overrides.pop("appt_type", None) or await _seed_appt_type(session)
+    target_date = overrides.pop("target_date", None) or _next_weekday(0)
+    if not overrides.pop("skip_availability", False):
+        await _seed_availability(session, provider.id, day_of_week=target_date.weekday())
+
+    booking, _ = await create_booking(
+        session=session,
+        request_id=request_id,
+        patient_name=overrides.get("patient_name", "Test Patient"),
+        provider_id=provider.id,
+        room_id=room.id,
+        appointment_type_id=appt_type.id,
+        target_date=target_date,
+        start_time=time(start_hour, 0),
+    )
+    return booking
+
+
+# ---------------------------------------------------------------------------
+# Tests — Get Booking
+# ---------------------------------------------------------------------------
+
+
+class TestGetBooking:
+    """Tests for retrieving a single booking by ID."""
+
+    async def test_get_existing_booking_returns_it(self, async_session):
+        booking = await _create_confirmed_booking(async_session, "req-get-1")
+
+        result = await get_booking(session=async_session, booking_id=booking.id)
+
+        assert result.id == booking.id
+        assert result.request_id == "req-get-1"
+
+    async def test_get_nonexistent_booking_raises_not_found(self, async_session):
+        with pytest.raises(AppError) as exc_info:
+            await get_booking(session=async_session, booking_id=uuid.uuid4())
+
+        assert exc_info.value.code == "NOT_FOUND"
+        assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Tests — List Bookings
+# ---------------------------------------------------------------------------
+
+
+class TestListBookings:
+    """Tests for listing bookings with filters."""
+
+    async def test_list_returns_all_bookings(self, async_session):
+        provider = await _seed_provider(async_session)
+        room = await _seed_room(async_session)
+        appt_type = await _seed_appt_type(async_session)
+        target_date = _next_weekday(0)
+        await _seed_availability(async_session, provider.id, day_of_week=0)
+
+        for i, hour in enumerate([9, 10, 11]):
+            await create_booking(
+                session=async_session,
+                request_id=f"req-list-{i}",
+                patient_name=f"Patient {i}",
+                provider_id=provider.id,
+                room_id=room.id,
+                appointment_type_id=appt_type.id,
+                target_date=target_date,
+                start_time=time(hour, 0),
+            )
+
+        from src.lib.pagination import PaginationParams
+        bookings, total = await list_bookings(
+            session=async_session,
+            pagination=PaginationParams(),
+        )
+
+        assert total >= 3
+        assert len(bookings) >= 3
+
+    async def test_list_filters_by_status(self, async_session):
+        booking = await _create_confirmed_booking(async_session, "req-list-status")
+
+        from src.lib.pagination import PaginationParams
+        confirmed, total_c = await list_bookings(
+            session=async_session,
+            status="confirmed",
+            pagination=PaginationParams(),
+        )
+        cancelled, total_x = await list_bookings(
+            session=async_session,
+            status="cancelled",
+            pagination=PaginationParams(),
+        )
+
+        assert any(b.id == booking.id for b in confirmed)
+        assert not any(b.id == booking.id for b in cancelled)
+
+    async def test_list_filters_by_provider_id(self, async_session):
+        booking = await _create_confirmed_booking(async_session, "req-list-prov")
+
+        from src.lib.pagination import PaginationParams
+        matched, total = await list_bookings(
+            session=async_session,
+            provider_id=booking.provider_id,
+            pagination=PaginationParams(),
+        )
+        unmatched, total2 = await list_bookings(
+            session=async_session,
+            provider_id=uuid.uuid4(),
+            pagination=PaginationParams(),
+        )
+
+        assert any(b.id == booking.id for b in matched)
+        assert total2 == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests — Cancel Booking
+# ---------------------------------------------------------------------------
+
+
+class TestCancelBooking:
+    """Tests for booking cancellation."""
+
+    async def test_cancel_sets_status_and_reason(self, async_session):
+        booking = await _create_confirmed_booking(async_session, "req-cancel-1")
+
+        cancelled = await cancel_booking(
+            session=async_session,
+            booking_id=booking.id,
+            reason="Patient requested",
+        )
+
+        assert cancelled.status == "cancelled"
+        assert cancelled.cancellation_reason == "Patient requested"
+
+    async def test_cancel_already_cancelled_is_idempotent(self, async_session):
+        booking = await _create_confirmed_booking(async_session, "req-cancel-idem")
+
+        first = await cancel_booking(
+            session=async_session, booking_id=booking.id, reason="First cancel"
+        )
+        second = await cancel_booking(
+            session=async_session, booking_id=booking.id, reason="Second cancel"
+        )
+
+        assert first.id == second.id
+        assert second.status == "cancelled"
+        # Reason stays from first cancellation
+        assert second.cancellation_reason == "First cancel"
+
+    async def test_cancel_completed_booking_raises_error(self, async_session):
+        booking = await _create_confirmed_booking(async_session, "req-cancel-done")
+        # Manually set status to completed
+        booking.status = "completed"
+        await async_session.flush()
+
+        with pytest.raises(AppError) as exc_info:
+            await cancel_booking(
+                session=async_session, booking_id=booking.id, reason="Too late"
+            )
+
+        assert exc_info.value.code == "VALIDATION_ERROR"
+        assert exc_info.value.status_code == 400
+
+    async def test_cancel_no_show_booking_raises_error(self, async_session):
+        booking = await _create_confirmed_booking(async_session, "req-cancel-noshow")
+        booking.status = "no_show"
+        await async_session.flush()
+
+        with pytest.raises(AppError) as exc_info:
+            await cancel_booking(
+                session=async_session, booking_id=booking.id, reason="Changed mind"
+            )
+
+        assert exc_info.value.code == "VALIDATION_ERROR"
+
+    async def test_cancel_nonexistent_booking_raises_not_found(self, async_session):
+        with pytest.raises(AppError) as exc_info:
+            await cancel_booking(
+                session=async_session, booking_id=uuid.uuid4(), reason="N/A"
+            )
+
+        assert exc_info.value.code == "NOT_FOUND"
+        assert exc_info.value.status_code == 404

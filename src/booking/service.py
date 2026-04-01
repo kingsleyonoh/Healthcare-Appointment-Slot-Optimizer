@@ -166,3 +166,89 @@ async def create_booking(
 
     await session.refresh(booking)
     return booking, True
+
+
+async def get_booking(
+    *,
+    session: AsyncSession,
+    booking_id,
+) -> Booking:
+    """Retrieve a single booking by ID. Raises NOT_FOUND if missing."""
+    booking = await session.get(Booking, booking_id)
+    if booking is None:
+        raise AppError(
+            code="NOT_FOUND",
+            message=f"Booking {booking_id} not found",
+            status_code=404,
+        )
+    return booking
+
+
+async def list_bookings(
+    *,
+    session: AsyncSession,
+    pagination,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    provider_id=None,
+    status: str | None = None,
+) -> tuple[list[Booking], int]:
+    """List bookings with optional filters and pagination."""
+    base = select(Booking)
+    count_q = select(func.count(Booking.id))
+
+    if date_from is not None:
+        base = base.where(Booking.date >= date_from)
+        count_q = count_q.where(Booking.date >= date_from)
+    if date_to is not None:
+        base = base.where(Booking.date <= date_to)
+        count_q = count_q.where(Booking.date <= date_to)
+    if provider_id is not None:
+        base = base.where(Booking.provider_id == provider_id)
+        count_q = count_q.where(Booking.provider_id == provider_id)
+    if status is not None:
+        base = base.where(Booking.status == status)
+        count_q = count_q.where(Booking.status == status)
+
+    total = (await session.execute(count_q)).scalar_one()
+    rows = (
+        await session.execute(
+            base.order_by(Booking.date, Booking.start_time)
+            .offset(pagination.offset)
+            .limit(pagination.page_size)
+        )
+    ).scalars().all()
+
+    return rows, total
+
+
+async def cancel_booking(
+    *,
+    session: AsyncSession,
+    booking_id,
+    reason: str,
+) -> Booking:
+    """Cancel a booking. Idempotent for already-cancelled bookings."""
+    booking = await session.get(Booking, booking_id)
+    if booking is None:
+        raise AppError(
+            code="NOT_FOUND",
+            message=f"Booking {booking_id} not found",
+            status_code=404,
+        )
+
+    if booking.status == "cancelled":
+        return booking
+
+    if booking.status in ("completed", "no_show"):
+        raise AppError(
+            code="VALIDATION_ERROR",
+            message=f"Cannot cancel booking with status '{booking.status}'",
+            status_code=400,
+        )
+
+    booking.status = "cancelled"
+    booking.cancellation_reason = reason
+    await session.flush()
+    await session.refresh(booking)
+    return booking

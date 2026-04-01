@@ -1,4 +1,4 @@
-"""Integration tests for POST /api/bookings endpoint."""
+"""Integration tests for bookings API — create, list, get, cancel."""
 
 from datetime import date, timedelta
 
@@ -172,3 +172,200 @@ class TestCreateBookingEndpoint:
 
         assert resp.status_code == 400
         assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/bookings — list with filters
+# ---------------------------------------------------------------------------
+
+
+class TestListBookingsEndpoint:
+    """GET /api/bookings integration tests."""
+
+    async def test_list_bookings_returns_paginated(self, client):
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        # Create 2 bookings
+        for i in range(2):
+            await client.post(
+                "/api/bookings",
+                json={
+                    "request_id": f"api-list-{i}",
+                    "patient_name": f"ListPatient{i}",
+                    "provider_id": data["provider"]["id"],
+                    "room_id": data["room"]["id"],
+                    "appointment_type_id": data["appt_type"]["id"],
+                    "date": target,
+                    "start_time": f"{9 + i:02d}:00",
+                },
+                headers=HEADERS,
+            )
+
+        resp = await client.get("/api/bookings", headers=HEADERS)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "items" in body
+        assert "total" in body
+        assert body["total"] >= 2
+        assert len(body["items"]) >= 2
+
+    async def test_list_bookings_filters_by_status(self, client):
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        await client.post(
+            "/api/bookings",
+            json={
+                "request_id": "api-list-filt",
+                "patient_name": "FilterPatient",
+                "provider_id": data["provider"]["id"],
+                "room_id": data["room"]["id"],
+                "appointment_type_id": data["appt_type"]["id"],
+                "date": target,
+                "start_time": "09:00",
+            },
+            headers=HEADERS,
+        )
+
+        confirmed = await client.get(
+            "/api/bookings", params={"status": "confirmed"}, headers=HEADERS
+        )
+        cancelled = await client.get(
+            "/api/bookings", params={"status": "cancelled"}, headers=HEADERS
+        )
+
+        assert confirmed.status_code == 200
+        assert confirmed.json()["total"] >= 1
+        # No cancelled bookings yet
+        assert cancelled.json()["total"] == 0
+
+    async def test_list_bookings_no_auth_returns_401(self, client):
+        resp = await client.get("/api/bookings")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /api/bookings/:id — single booking
+# ---------------------------------------------------------------------------
+
+
+class TestGetBookingEndpoint:
+    """GET /api/bookings/:id integration tests."""
+
+    async def test_get_booking_returns_details(self, client):
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        create_resp = await client.post(
+            "/api/bookings",
+            json={
+                "request_id": "api-get-1",
+                "patient_name": "GetPatient",
+                "provider_id": data["provider"]["id"],
+                "room_id": data["room"]["id"],
+                "appointment_type_id": data["appt_type"]["id"],
+                "date": target,
+                "start_time": "09:00",
+            },
+            headers=HEADERS,
+        )
+        booking_id = create_resp.json()["id"]
+
+        resp = await client.get(f"/api/bookings/{booking_id}", headers=HEADERS)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == booking_id
+        assert body["patient_name"] == "GetPatient"
+        assert body["status"] == "confirmed"
+
+    async def test_get_nonexistent_booking_returns_404(self, client):
+        fake_id = "00000000-0000-0000-0000-000000000099"
+        resp = await client.get(f"/api/bookings/{fake_id}", headers=HEADERS)
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/bookings/:id/cancel
+# ---------------------------------------------------------------------------
+
+
+class TestCancelBookingEndpoint:
+    """PUT /api/bookings/:id/cancel integration tests."""
+
+    async def test_cancel_booking_returns_cancelled_state(self, client):
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        create_resp = await client.post(
+            "/api/bookings",
+            json={
+                "request_id": "api-cancel-1",
+                "patient_name": "CancelPatient",
+                "provider_id": data["provider"]["id"],
+                "room_id": data["room"]["id"],
+                "appointment_type_id": data["appt_type"]["id"],
+                "date": target,
+                "start_time": "09:00",
+            },
+            headers=HEADERS,
+        )
+        booking_id = create_resp.json()["id"]
+
+        resp = await client.put(
+            f"/api/bookings/{booking_id}/cancel",
+            json={"reason": "No longer needed"},
+            headers=HEADERS,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["booking"]["status"] == "cancelled"
+        assert body["booking"]["cancellation_reason"] == "No longer needed"
+        assert "backfill_candidates" in body
+
+    async def test_cancel_idempotent_returns_same_state(self, client):
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        create_resp = await client.post(
+            "/api/bookings",
+            json={
+                "request_id": "api-cancel-idem",
+                "patient_name": "IdemPatient",
+                "provider_id": data["provider"]["id"],
+                "room_id": data["room"]["id"],
+                "appointment_type_id": data["appt_type"]["id"],
+                "date": target,
+                "start_time": "10:00",
+            },
+            headers=HEADERS,
+        )
+        booking_id = create_resp.json()["id"]
+
+        first = await client.put(
+            f"/api/bookings/{booking_id}/cancel",
+            json={"reason": "First"},
+            headers=HEADERS,
+        )
+        second = await client.put(
+            f"/api/bookings/{booking_id}/cancel",
+            json={"reason": "Second"},
+            headers=HEADERS,
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["booking"]["cancellation_reason"] == "First"
+
+    async def test_cancel_nonexistent_returns_404(self, client):
+        fake_id = "00000000-0000-0000-0000-000000000099"
+        resp = await client.put(
+            f"/api/bookings/{fake_id}/cancel",
+            json={"reason": "N/A"},
+            headers=HEADERS,
+        )
+        assert resp.status_code == 404

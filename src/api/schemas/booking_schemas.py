@@ -40,3 +40,16 @@ class BookingOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BookingCancelRequest(BaseModel):
+    """Request body for PUT /api/bookings/:id/cancel."""
+
+    reason: str = Field(..., min_length=1)
+
+
+class BookingCancelOut(BaseModel):
+    """Response for cancellation — booking + backfill candidates."""
+
+    booking: BookingOut
+    backfill_candidates: list = Field(default_factory=list)
