@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     MAX_DAILY_APPOINTMENTS: int = 20
     OVERBOOK_DEFAULT: int = 0
 
+    # --- Notification Hub ---
+    NOTIFICATION_HUB_URL: str = ""
+    NOTIFICATION_HUB_API_KEY: str = ""
+    NOTIFICATION_HUB_ENABLED: bool = False
+
     # --- Logging ---
     LOG_LEVEL: str = "info"
 

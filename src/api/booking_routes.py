@@ -22,6 +22,7 @@ from src.booking.backfill import find_backfill_candidates
 from src.booking.service import cancel_booking, create_booking, get_booking, list_bookings
 from src.config import get_settings
 from src.db.session import get_session
+from src.integrations.notification_hub import NotificationHubClient
 from src.lib.pagination import PaginationParams, get_pagination
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,11 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/api", tags=["bookings"])
 _auth = create_api_key_dependency(settings.api_keys_list)
+_hub = NotificationHubClient(
+    url=settings.NOTIFICATION_HUB_URL,
+    api_key=settings.NOTIFICATION_HUB_API_KEY,
+    enabled=settings.NOTIFICATION_HUB_ENABLED,
+)
 
 
 @router.post("/bookings", status_code=201)
@@ -53,6 +59,9 @@ async def create_booking_endpoint(
 
     if not is_new:
         response.status_code = 200
+
+    if is_new:
+        await _hub.emit("appointment.booked", {"booking_id": str(booking.id)})
 
     return BookingOut.model_validate(booking)
 
@@ -106,6 +115,7 @@ async def cancel_booking_endpoint(
     booking = await cancel_booking(
         session=session, booking_id=booking_id, reason=body.reason
     )
+    await _hub.emit("appointment.cancelled", {"booking_id": str(booking.id)})
     candidates = await find_backfill_candidates(
         session=session, cancelled_booking=booking,
     )
