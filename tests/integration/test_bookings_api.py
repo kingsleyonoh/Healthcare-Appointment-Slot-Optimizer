@@ -1,5 +1,6 @@
-"""Integration tests for bookings API — create, list, get, cancel."""
+"""Integration tests for bookings API — create, list, get, cancel, backfill, race."""
 
+import asyncio
 from datetime import date, timedelta
 
 import pytest
@@ -369,3 +370,140 @@ class TestCancelBookingEndpoint:
             headers=HEADERS,
         )
         assert resp.status_code == 404
+
+    async def test_cancel_returns_backfill_candidates(self, client):
+        """Cancelling a booking returns matching cancelled bookings as backfill candidates."""
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        # Create two bookings, then cancel both
+        b1 = await client.post(
+            "/api/bookings",
+            json={
+                "request_id": "api-bf-1",
+                "patient_name": "BackfillPatient1",
+                "provider_id": data["provider"]["id"],
+                "room_id": data["room"]["id"],
+                "appointment_type_id": data["appt_type"]["id"],
+                "date": target,
+                "start_time": "09:00",
+            },
+            headers=HEADERS,
+        )
+        assert b1.status_code == 201
+
+        # Create a second room for the second booking (room slot conflict)
+        room2 = await client.post(
+            "/api/rooms",
+            json={"name": "Backfill Room 2", "room_type": "consultation"},
+            headers=HEADERS,
+        )
+        assert room2.status_code == 201
+
+        b2 = await client.post(
+            "/api/bookings",
+            json={
+                "request_id": "api-bf-2",
+                "patient_name": "BackfillPatient2",
+                "provider_id": data["provider"]["id"],
+                "room_id": room2.json()["id"],
+                "appointment_type_id": data["appt_type"]["id"],
+                "date": target,
+                "start_time": "10:00",
+            },
+            headers=HEADERS,
+        )
+        assert b2.status_code == 201
+
+        # Cancel booking 2 first (creates a candidate)
+        await client.put(
+            f"/api/bookings/{b2.json()['id']}/cancel",
+            json={"reason": "Schedule change"},
+            headers=HEADERS,
+        )
+
+        # Cancel booking 1 — should see booking 2 as backfill candidate
+        resp = await client.put(
+            f"/api/bookings/{b1.json()['id']}/cancel",
+            json={"reason": "Patient request"},
+            headers=HEADERS,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        candidates = body["backfill_candidates"]
+        assert len(candidates) >= 1
+        candidate_ids = [c["candidate_booking_id"] for c in candidates]
+        assert b2.json()["id"] in candidate_ids
+        assert candidates[0]["patient_name"] == "BackfillPatient2"
+        assert "time_proximity_score" in candidates[0]
+
+    async def test_cancel_returns_empty_backfill_when_no_candidates(self, client):
+        """Cancelling the only booking returns empty backfill candidates."""
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        resp = await client.post(
+            "/api/bookings",
+            json={
+                "request_id": "api-bf-solo",
+                "patient_name": "SoloPatient",
+                "provider_id": data["provider"]["id"],
+                "room_id": data["room"]["id"],
+                "appointment_type_id": data["appt_type"]["id"],
+                "date": target,
+                "start_time": "09:00",
+            },
+            headers=HEADERS,
+        )
+        booking_id = resp.json()["id"]
+
+        cancel_resp = await client.put(
+            f"/api/bookings/{booking_id}/cancel",
+            json={"reason": "No longer needed"},
+            headers=HEADERS,
+        )
+
+        assert cancel_resp.status_code == 200
+        assert cancel_resp.json()["backfill_candidates"] == []
+
+
+# ---------------------------------------------------------------------------
+# Concurrent booking race condition
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentBooking:
+    """Verify that concurrent booking attempts don't cause double-booking."""
+
+    async def test_concurrent_same_slot_one_wins_one_fails(self, client):
+        """Two simultaneous bookings for the same slot — one gets 201, other gets 409."""
+        data = await _seed_via_api(client)
+        target = _next_weekday(0).isoformat()
+
+        payload_a = {
+            "request_id": "race-a",
+            "patient_name": "RacerA",
+            "provider_id": data["provider"]["id"],
+            "room_id": data["room"]["id"],
+            "appointment_type_id": data["appt_type"]["id"],
+            "date": target,
+            "start_time": "14:00",
+        }
+        payload_b = {
+            "request_id": "race-b",
+            "patient_name": "RacerB",
+            "provider_id": data["provider"]["id"],
+            "room_id": data["room"]["id"],
+            "appointment_type_id": data["appt_type"]["id"],
+            "date": target,
+            "start_time": "14:00",
+        }
+
+        resp_a, resp_b = await asyncio.gather(
+            client.post("/api/bookings", json=payload_a, headers=HEADERS),
+            client.post("/api/bookings", json=payload_b, headers=HEADERS),
+        )
+
+        statuses = sorted([resp_a.status_code, resp_b.status_code])
+        assert statuses == [201, 409], f"Expected [201, 409] but got {statuses}"

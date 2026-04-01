@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.booking.backfill import find_backfill_candidates
 from src.booking.service import cancel_booking, create_booking, get_booking, list_bookings
 from src.db.models import (
     AppointmentType,
@@ -559,3 +560,175 @@ class TestCancelBooking:
 
         assert exc_info.value.code == "NOT_FOUND"
         assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Tests — Backfill Candidates
+# ---------------------------------------------------------------------------
+
+
+class TestBackfillCandidates:
+    """Tests for find_backfill_candidates() query logic."""
+
+    async def test_returns_cancelled_bookings_matching_appointment_type(self, async_session):
+        """Cancelled bookings with same appointment type are returned as candidates."""
+        provider = await _seed_provider(async_session)
+        room = await _seed_room(async_session)
+        appt_type = await _seed_appt_type(async_session)
+        target_date = _next_weekday(0)
+        await _seed_availability(async_session, provider.id, day_of_week=target_date.weekday())
+
+        # Create and cancel the trigger booking at 09:00
+        trigger = await _create_confirmed_booking(
+            async_session, "req-bf-trigger", start_hour=9,
+            provider=provider, room=room, appt_type=appt_type,
+            target_date=target_date, skip_availability=True,
+        )
+        trigger.status = "cancelled"
+        trigger.cancellation_reason = "Patient request"
+        await async_session.flush()
+
+        # Create and cancel a candidate booking at 10:00 on same day
+        room2 = await _seed_room(async_session, name="Room B")
+        candidate = await _create_confirmed_booking(
+            async_session, "req-bf-cand", start_hour=10,
+            provider=provider, room=room2, appt_type=appt_type,
+            target_date=target_date, skip_availability=True,
+        )
+        candidate.status = "cancelled"
+        candidate.cancellation_reason = "Schedule conflict"
+        await async_session.flush()
+
+        results = await find_backfill_candidates(
+            session=async_session, cancelled_booking=trigger,
+        )
+
+        assert len(results) >= 1
+        ids = [r["candidate_booking_id"] for r in results]
+        assert candidate.id in ids
+
+    async def test_excludes_the_cancelled_booking_itself(self, async_session):
+        """The trigger booking is not returned as its own candidate."""
+        provider = await _seed_provider(async_session)
+        room = await _seed_room(async_session)
+        appt_type = await _seed_appt_type(async_session)
+        target_date = _next_weekday(0)
+        await _seed_availability(async_session, provider.id, day_of_week=target_date.weekday())
+
+        trigger = await _create_confirmed_booking(
+            async_session, "req-bf-self", start_hour=9,
+            provider=provider, room=room, appt_type=appt_type,
+            target_date=target_date, skip_availability=True,
+        )
+        trigger.status = "cancelled"
+        await async_session.flush()
+
+        results = await find_backfill_candidates(
+            session=async_session, cancelled_booking=trigger,
+        )
+
+        ids = [r["candidate_booking_id"] for r in results]
+        assert trigger.id not in ids
+
+    async def test_only_matches_same_appointment_type(self, async_session):
+        """Cancelled bookings with a different appointment type are excluded."""
+        provider = await _seed_provider(async_session)
+        room = await _seed_room(async_session)
+        appt_type_a = await _seed_appt_type(async_session, name="Type A")
+        appt_type_b = await _seed_appt_type(async_session, name="Type B")
+        target_date = _next_weekday(0)
+        await _seed_availability(async_session, provider.id, day_of_week=target_date.weekday())
+
+        # Trigger uses type A
+        trigger = await _create_confirmed_booking(
+            async_session, "req-bf-typea", start_hour=9,
+            provider=provider, room=room, appt_type=appt_type_a,
+            target_date=target_date, skip_availability=True,
+        )
+        trigger.status = "cancelled"
+        await async_session.flush()
+
+        # Candidate uses type B — should NOT match
+        room2 = await _seed_room(async_session, name="Room C")
+        wrong_type = await _create_confirmed_booking(
+            async_session, "req-bf-typeb", start_hour=10,
+            provider=provider, room=room2, appt_type=appt_type_b,
+            target_date=target_date, skip_availability=True,
+        )
+        wrong_type.status = "cancelled"
+        await async_session.flush()
+
+        results = await find_backfill_candidates(
+            session=async_session, cancelled_booking=trigger,
+        )
+
+        ids = [r["candidate_booking_id"] for r in results]
+        assert wrong_type.id not in ids
+
+    async def test_returns_empty_when_no_candidates(self, async_session):
+        """No cancelled bookings with matching type returns empty list."""
+        provider = await _seed_provider(async_session)
+        room = await _seed_room(async_session)
+        appt_type = await _seed_appt_type(async_session)
+        target_date = _next_weekday(0)
+        await _seed_availability(async_session, provider.id, day_of_week=target_date.weekday())
+
+        trigger = await _create_confirmed_booking(
+            async_session, "req-bf-empty", start_hour=9,
+            provider=provider, room=room, appt_type=appt_type,
+            target_date=target_date, skip_availability=True,
+        )
+        trigger.status = "cancelled"
+        await async_session.flush()
+
+        results = await find_backfill_candidates(
+            session=async_session, cancelled_booking=trigger,
+        )
+
+        assert results == []
+
+    async def test_same_day_candidate_scores_higher_than_distant(self, async_session):
+        """A same-day cancelled booking scores higher than one 5 days away."""
+        provider = await _seed_provider(async_session)
+        room = await _seed_room(async_session)
+        appt_type = await _seed_appt_type(async_session)
+        target_date = _next_weekday(0)
+        distant_date = target_date + timedelta(days=5)
+        # Ensure availability for both days
+        await _seed_availability(async_session, provider.id, day_of_week=target_date.weekday())
+        await _seed_availability(async_session, provider.id, day_of_week=distant_date.weekday())
+
+        trigger = await _create_confirmed_booking(
+            async_session, "req-bf-score-t", start_hour=9,
+            provider=provider, room=room, appt_type=appt_type,
+            target_date=target_date, skip_availability=True,
+        )
+        trigger.status = "cancelled"
+        await async_session.flush()
+
+        # Same-day candidate
+        room2 = await _seed_room(async_session, name="Room D")
+        same_day = await _create_confirmed_booking(
+            async_session, "req-bf-score-s", start_hour=10,
+            provider=provider, room=room2, appt_type=appt_type,
+            target_date=target_date, skip_availability=True,
+        )
+        same_day.status = "cancelled"
+        await async_session.flush()
+
+        # Distant candidate
+        room3 = await _seed_room(async_session, name="Room E")
+        distant = await _create_confirmed_booking(
+            async_session, "req-bf-score-d", start_hour=10,
+            provider=provider, room=room3, appt_type=appt_type,
+            target_date=distant_date, skip_availability=True,
+        )
+        distant.status = "cancelled"
+        await async_session.flush()
+
+        results = await find_backfill_candidates(
+            session=async_session, cancelled_booking=trigger,
+        )
+
+        scores = {r["candidate_booking_id"]: r["time_proximity_score"] for r in results}
+        assert scores[same_day.id] > scores[distant.id]

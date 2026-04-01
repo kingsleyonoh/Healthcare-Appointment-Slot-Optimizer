@@ -48,8 +48,17 @@ class BookingCancelRequest(BaseModel):
     reason: str = Field(..., min_length=1)
 
 
+class BackfillCandidateOut(BaseModel):
+    """A potential backfill candidate for a cancelled slot."""
+
+    candidate_booking_id: uuid.UUID
+    patient_name: str
+    appointment_type: str
+    time_proximity_score: float
+
+
 class BookingCancelOut(BaseModel):
     """Response for cancellation — booking + backfill candidates."""
 
     booking: BookingOut
-    backfill_candidates: list = Field(default_factory=list)
+    backfill_candidates: list[BackfillCandidateOut] = Field(default_factory=list)

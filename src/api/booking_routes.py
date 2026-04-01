@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.middleware.auth import create_api_key_dependency
 from src.api.schemas.booking_schemas import (
+    BackfillCandidateOut,
     BookingCancelOut,
     BookingCancelRequest,
     BookingCreate,
     BookingOut,
 )
 from src.api.schemas.config_schemas import PaginatedResponse
+from src.booking.backfill import find_backfill_candidates
 from src.booking.service import cancel_booking, create_booking, get_booking, list_bookings
 from src.config import get_settings
 from src.db.session import get_session
@@ -104,7 +106,10 @@ async def cancel_booking_endpoint(
     booking = await cancel_booking(
         session=session, booking_id=booking_id, reason=body.reason
     )
+    candidates = await find_backfill_candidates(
+        session=session, cancelled_booking=booking,
+    )
     return BookingCancelOut(
         booking=BookingOut.model_validate(booking),
-        backfill_candidates=[],
+        backfill_candidates=[BackfillCandidateOut(**c) for c in candidates],
     )
