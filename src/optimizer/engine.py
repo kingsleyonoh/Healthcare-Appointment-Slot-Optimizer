@@ -22,6 +22,7 @@ from src.db.models import (
     ProviderAvailability,
     Room,
 )
+from src.lib.cache import AvailabilityCache
 from src.lib.time_utils import generate_slots
 from src.optimizer.constraints import (
     apply_buffer,
@@ -34,6 +35,9 @@ from src.optimizer.constraints import (
 from src.optimizer.scorer import score_slot
 
 logger = logging.getLogger(__name__)
+
+# Module-level availability cache (TTL 60s per PRD §10b)
+availability_cache = AvailabilityCache(ttl_seconds=60)
 
 
 async def find_available_slots(
@@ -85,16 +89,19 @@ async def find_available_slots(
     slots: list[dict] = []
 
     for provider in providers:
-        # 4a. Load availability windows
-        avail_rows = (
-            await session.execute(
-                select(ProviderAvailability).where(
-                    ProviderAvailability.provider_id == provider.id
+        # 4a. Load availability windows (with TTL cache)
+        cache_key = f"{provider.id}:{target_date.isoformat()}"
+        windows = availability_cache.get(cache_key)
+        if windows is None:
+            avail_rows = (
+                await session.execute(
+                    select(ProviderAvailability).where(
+                        ProviderAvailability.provider_id == provider.id
+                    )
                 )
-            )
-        ).scalars().all()
-
-        windows = get_availability_windows(avail_rows, target_date)
+            ).scalars().all()
+            windows = get_availability_windows(avail_rows, target_date)
+            availability_cache.set(cache_key, windows)
         if not windows:
             continue
 

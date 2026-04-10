@@ -228,6 +228,11 @@ async def create_availability(
     session.add(avail)
     await session.flush()
     await session.refresh(avail)
+
+    # Invalidate availability cache for this provider
+    from src.optimizer.engine import availability_cache
+    availability_cache.invalidate_all()
+
     return AvailabilityOut.model_validate(avail)
 
 
