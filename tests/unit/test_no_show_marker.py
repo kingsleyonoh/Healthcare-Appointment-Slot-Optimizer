@@ -262,7 +262,7 @@ class TestNotificationEventPayloads:
     """
 
     async def test_booked_event_payload_has_required_fields(self):
-        """appointment.booked payload: {event_type, data: {booking_id}}."""
+        """appointment.booked payload: {event_type, event_id, payload: {booking_id}}."""
         client = NotificationHubClient(
             url="http://hub.test", api_key="key", enabled=True,
         )
@@ -274,14 +274,13 @@ class TestNotificationEventPayloads:
 
             await client.emit("appointment.booked", {"booking_id": "abc-123"})
 
-            payload = mock_http.post.call_args[1]["json"]
-            assert payload == {
-                "event_type": "appointment.booked",
-                "data": {"booking_id": "abc-123"},
-            }
+            body = mock_http.post.call_args[1]["json"]
+            assert body["event_type"] == "appointment.booked"
+            assert body["event_id"].startswith("appointment.booked-")
+            assert body["payload"] == {"booking_id": "abc-123"}
 
     async def test_cancelled_event_payload_has_required_fields(self):
-        """appointment.cancelled payload: {event_type, data: {booking_id}}."""
+        """appointment.cancelled payload: {event_type, event_id, payload: {booking_id}}."""
         client = NotificationHubClient(
             url="http://hub.test", api_key="key", enabled=True,
         )
@@ -293,14 +292,13 @@ class TestNotificationEventPayloads:
 
             await client.emit("appointment.cancelled", {"booking_id": "def-456"})
 
-            payload = mock_http.post.call_args[1]["json"]
-            assert payload == {
-                "event_type": "appointment.cancelled",
-                "data": {"booking_id": "def-456"},
-            }
+            body = mock_http.post.call_args[1]["json"]
+            assert body["event_type"] == "appointment.cancelled"
+            assert body["event_id"].startswith("appointment.cancelled-")
+            assert body["payload"] == {"booking_id": "def-456"}
 
     async def test_no_show_event_payload_has_required_fields(self):
-        """appointment.no_show payload: {event_type, data: {booking_id}}."""
+        """appointment.no_show payload: {event_type, event_id, payload: {booking_id}}."""
         client = NotificationHubClient(
             url="http://hub.test", api_key="key", enabled=True,
         )
@@ -312,11 +310,10 @@ class TestNotificationEventPayloads:
 
             await client.emit("appointment.no_show", {"booking_id": "ghi-789"})
 
-            payload = mock_http.post.call_args[1]["json"]
-            assert payload == {
-                "event_type": "appointment.no_show",
-                "data": {"booking_id": "ghi-789"},
-            }
+            body = mock_http.post.call_args[1]["json"]
+            assert body["event_type"] == "appointment.no_show"
+            assert body["event_id"].startswith("appointment.no_show-")
+            assert body["payload"] == {"booking_id": "ghi-789"}
 
     async def test_all_events_include_api_key_header(self):
         """All event emissions include X-API-Key in headers."""

@@ -36,7 +36,7 @@ class TestNotificationHubEnabled:
             assert call_args[1]["headers"]["X-API-Key"] == "test-key"
 
     async def test_event_payload_structure(self):
-        """Emitted payload includes event_type and data fields."""
+        """Emitted payload includes event_type, event_id, and payload fields."""
         client = NotificationHubClient(
             url="http://hub.test", api_key="test-key", enabled=True,
         )
@@ -52,8 +52,10 @@ class TestNotificationHubEnabled:
             call_args = mock_http.post.call_args
             json_body = call_args[1]["json"]
             assert json_body["event_type"] == "appointment.cancelled"
-            assert json_body["data"]["booking_id"] == "456"
-            assert json_body["data"]["reason"] == "patient request"
+            assert "event_id" in json_body
+            assert json_body["event_id"].startswith("appointment.cancelled-")
+            assert json_body["payload"]["booking_id"] == "456"
+            assert json_body["payload"]["reason"] == "patient request"
 
 
 class TestNotificationHubDisabled:
