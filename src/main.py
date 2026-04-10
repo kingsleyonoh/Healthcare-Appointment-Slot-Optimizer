@@ -19,9 +19,11 @@ from src.api.config_routes import router as config_router
 from src.api.health import router as health_router
 from src.api.schedule import router as schedule_router
 from src.api.slots import router as slots_router
+from src.api.stats import router as stats_router
 from src.db.session import get_engine, get_session_factory
 from src.integrations.notification_hub import NotificationHubClient
 from src.jobs.no_show_marker import mark_no_shows
+from src.jobs.stats_calculator import calculate_stats
 from src.lib.errors import register_error_handlers
 from src.lib.logger import configure_logging
 from src.lib.scheduler import create_scheduler
@@ -37,6 +39,22 @@ def _run_no_show_marker(hub: NotificationHubClient) -> None:
             async with session.begin():
                 count = await mark_no_shows(session=session, hub=hub)
                 logger.info("Scheduled no-show marker: marked %d", count)
+
+    asyncio.run(_inner())
+
+
+def _run_stats_calculator() -> None:
+    """Sync wrapper to run the async stats calculator from APScheduler."""
+    async def _inner():
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            snapshot = await calculate_stats(session=session)
+            logger.info(
+                "Stats calculated: util=%.4f bookings=%d no_shows=%d",
+                snapshot.utilization_today,
+                snapshot.bookings_today,
+                snapshot.no_shows,
+            )
 
     asyncio.run(_inner())
 
@@ -69,8 +87,16 @@ async def _lifespan(app: FastAPI):
         name="No-Show Marker",
     )
 
+    scheduler.add_job(
+        _run_stats_calculator,
+        "interval",
+        hours=1,
+        id="stats_calculator",
+        name="Stats Calculator",
+    )
+
     scheduler.start()
-    logger.info("APScheduler started with no-show marker job (every 1h)")
+    logger.info("APScheduler started with no-show marker + stats calculator jobs (every 1h)")
 
     yield
 
@@ -107,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(slots_router)
     app.include_router(booking_router)
     app.include_router(schedule_router)
+    app.include_router(stats_router)
 
     return app
 
