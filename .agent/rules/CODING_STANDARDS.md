@@ -1,6 +1,6 @@
 # Healthcare Appointment Slot Optimizer — Coding Standards
 
-> Part 1 of 4. Also loaded: `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_DOMAIN.md`, `CODING_STANDARDS_AI.md`
+> Part 1 of 5. Also loaded: `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_TESTING_LIVE.md`, `CODING_STANDARDS_DOMAIN.md`, `CODING_STANDARDS_AI.md`
 
 These rules are ALWAYS ACTIVE. Follow them on every response without being asked.
 
@@ -57,6 +57,8 @@ If your task touches any of the domains below, **also read the corresponding rul
 - `config` — settings, environment, config loader
 - `auth` — API key middleware
 - `lib` — shared utilities (time_utils, logger)
+- `integrations` — notification hub, external service clients
+- `jobs` — background jobs (no-show marker, stats calculator)
 - `deploy` — Dockerfile, docker-compose, CI/CD
 - `workflows` — `.agent/workflows/` changes
 
@@ -85,14 +87,17 @@ lib/          → nothing (leaf modules)
 db/           → lib/
 optimizer/    → lib/, db/
 booking/      → lib/, db/
-api/          → optimizer/, booking/, db/, lib/
-main.py       → api/, db/, config
+integrations/ → nothing (leaf — HTTP client only)
+jobs/         → db/, lib/, optimizer/, integrations/, booking/
+api/          → optimizer/, booking/, integrations/, db/, lib/
+main.py       → api/, db/, integrations/, jobs/, lib/, config
 ```
 
 **Rules:**
 - Lower layers NEVER import from higher layers.
-- `lib/` and `db/` must NOT import from `optimizer/`, `booking/`, or `api/`.
-- `optimizer/` and `booking/` must NOT import from `api/`.
+- `lib/` and `db/` must NOT import from `optimizer/`, `booking/`, `integrations/`, `jobs/`, or `api/`.
+- `optimizer/` and `booking/` must NOT import from `api/` or `jobs/`.
+- `integrations/` must NOT import from any other `src/` module.
 - All cross-module access goes through function parameters, not direct imports up the chain.
 
 ## File Size Limits

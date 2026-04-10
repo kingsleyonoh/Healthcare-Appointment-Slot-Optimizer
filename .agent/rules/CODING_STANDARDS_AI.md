@@ -1,6 +1,6 @@
 # Healthcare Appointment Slot Optimizer — AI Discipline & Skill Orchestration
 
-> Part 4 of 4. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_DOMAIN.md`
+> Part 5 of 5. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_TESTING_LIVE.md`, `CODING_STANDARDS_DOMAIN.md`
 
 ## Skill Selection & Orchestration
 You have a vast library of specialized skills available. **Use them proactively** — don't wing it when a skill exists for the task.

@@ -1,0 +1,54 @@
+# Healthcare Appointment Slot Optimizer
+
+> Constraint-based scheduling engine for healthcare clinics. Computes optimal appointment slots, manages bookings with conflict prevention, and provides schedule analytics.
+
+## What This Does
+
+Solves the scheduling problem for multi-provider, multi-room healthcare clinics. Given provider availability, room constraints, and appointment type requirements, the optimizer finds and ranks available slots by quality score. Handles overbooking rules, backfill candidates for cancellations, and real-time utilization metrics.
+
+## Who This Is For
+
+Healthcare clinic administrators and scheduling system integrators who need an API-first appointment scheduling backend.
+
+## Quick Start
+
+1. Clone: `git clone <repo-url>`
+2. Install: `pip install -e ".[dev]"`
+3. Configure: `cp .env.example .env` — fill in DATABASE_URL and API_KEYS
+4. Start DB: `docker compose up -d` (PostgreSQL on port 5434)
+5. Migrate: `alembic upgrade head`
+6. Seed: `python -m src.db.seed`
+7. Run: `uvicorn src.main:app --reload`
+
+## API Surface
+
+- `GET /api/health` — Health check (public)
+- `GET /api/slots?target_date=&appointment_type_id=` — Find scored available slots
+- `POST /api/bookings` — Create booking (idempotent via request_id)
+- `GET /api/bookings` — List bookings (filterable, paginated)
+- `GET /api/bookings/{id}` — Get single booking
+- `PUT /api/bookings/{id}/cancel` — Cancel booking + get backfill candidates
+- `GET /api/schedule?date_from=&date_to=` — Schedule view with utilization
+- `GET /api/stats` — Daily statistics (utilization, bookings, no-shows)
+- `POST /api/providers` — CRUD for providers
+- `POST /api/rooms` — CRUD for rooms
+- `POST /api/appointment-types` — CRUD for appointment types
+- `POST /api/provider-availability` — CRUD for availability windows
+- `POST /api/overbooking-rules` — CRUD for overbooking rules
+
+All endpoints except /api/health require `X-API-Key` header.
+
+## Integration
+
+- **Notification Hub** — Fire-and-forget events (appointment.booked, .cancelled, .no_show) via HTTP POST
+- **BetterStack** — External health monitoring via heartbeat URL
+
+## Architecture
+
+Python 3.12 / FastAPI / SQLAlchemy 2.x (async) / PostgreSQL 16 / APScheduler. Constraint-based optimizer with 4-factor quality scoring (preference match 40%, gap minimization 35%, room switching 15%, overbooking penalty 10%). Background jobs for no-show marking and stats calculation (hourly).
+
+## Source
+
+- Documentation: ./README.md
+- API spec: ./openapi.yaml
+- Agent context: ./.agent/rules/CODEBASE_CONTEXT.md

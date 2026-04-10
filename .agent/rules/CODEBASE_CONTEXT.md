@@ -1,6 +1,6 @@
 # Healthcare Appointment Slot Optimizer — Codebase Context
 
-> Last updated: 2026-03-31 (template sync)
+> Last updated: 2026-04-10
 > Template synced: 2026-03-31
 
 ## Tech Stack
@@ -13,7 +13,9 @@
 | ORM | SQLAlchemy 2.x (async) |
 | Migrations | Alembic |
 | Validation | Pydantic v2 |
+| HTTP Client | httpx (async, for Notification Hub) |
 | Test Runner | pytest + httpx (async) |
+| Background Jobs | APScheduler 3.x (in-process, hourly interval) |
 | Containerization | Docker + Docker Compose |
 | Hosting | Docker on Hetzner VPS behind Traefik |
 | Logging | structlog (JSON to stdout) |
@@ -23,44 +25,51 @@
 ```
 appointment-slot-optimizer/
 ├── src/
-│   ├── main.py                      # FastAPI app factory + lifespan
-│   ├── config.py                    # Pydantic Settings
-│   ├── optimizer/                   # (Phase 3 — not yet implemented)
-│   ├── booking/                     # (Phase 4 — not yet implemented)
+│   ├── main.py                      # App factory + lifespan + job registration
+│   ├── config.py                    # Pydantic Settings (all env vars)
+│   ├── optimizer/
+│   │   ├── engine.py                # Slot computation orchestrator
+│   │   ├── constraints.py           # Availability windows, buffers, room filtering
+│   │   └── scorer.py                # Quality scoring (preference/gap/room/overbook)
+│   ├── booking/
+│   │   ├── service.py               # create/get/list/cancel booking
+│   │   └── backfill.py              # Backfill candidates (±7 days proximity)
+│   ├── integrations/
+│   │   └── notification_hub.py      # Fire-and-forget event emitter (HTTP)
+│   ├── jobs/
+│   │   ├── no_show_marker.py        # Mark overdue bookings as no_show (hourly)
+│   │   └── stats_calculator.py      # Compute utilization stats (hourly)
 │   ├── api/
 │   │   ├── config_routes.py         # Provider/room/type/availability/rules CRUD
+│   │   ├── booking_routes.py        # Booking CRUD + cancel + backfill
+│   │   ├── slots.py                 # GET /api/slots (scored slot computation)
+│   │   ├── schedule.py              # GET /api/schedule (daily breakdown)
+│   │   ├── stats.py                 # GET /api/stats (utilization metrics)
 │   │   ├── health.py                # GET /api/health (public)
 │   │   ├── schemas/
-│   │   │   └── config_schemas.py    # Pydantic models + RoomType enum
+│   │   │   ├── config_schemas.py    # Config entity models + RoomType enum
+│   │   │   ├── booking_schemas.py   # Booking + cancel + backfill schemas
+│   │   │   ├── slot_schemas.py      # SlotOut, SlotResponse
+│   │   │   └── schedule_schemas.py  # Schedule view schemas
 │   │   └── middleware/
 │   │       ├── auth.py              # API key validation dependency
 │   │       └── rate_limiter.py      # Sliding-window rate limiter
 │   ├── db/
 │   │   ├── session.py               # Async engine (lru_cache) + session factory
-│   │   └── models.py                # SQLAlchemy models (6 tables)
+│   │   ├── models.py                # SQLAlchemy models (6 tables)
+│   │   └── seed.py                  # Idempotent dev seed data
 │   └── lib/
 │       ├── errors.py                # AppError + JSON error envelope
 │       ├── time_utils.py            # Interval math for slot computation
 │       ├── logger.py                # Structured logging (structlog)
+│       ├── cache.py                 # In-memory TTL cache (AvailabilityCache)
+│       ├── pagination.py            # PaginationParams + get_pagination
 │       └── scheduler.py             # APScheduler factory
-├── alembic/
-│   └── versions/                    # Initial migration (all 6 tables)
+├── alembic/versions/                # Initial migration (all 6 tables)
 ├── tests/
-│   ├── conftest.py                  # Shared fixtures (async engine/session)
-│   ├── unit/
-│   │   ├── test_auth.py
-│   │   ├── test_config.py
-│   │   ├── test_errors.py
-│   │   ├── test_health.py
-│   │   ├── test_logger.py
-│   │   ├── test_rate_limiter.py
-│   │   ├── test_scheduler.py
-│   │   └── test_time_utils.py
-│   └── integration/
-│       ├── test_smoke.py            # DB connectivity check
-│       ├── test_models.py           # ORM model CRUD
-│       ├── test_health.py           # Health endpoint integration
-│       └── test_config_api.py       # Config API (23 tests)
+│   ├── conftest.py                  # Shared async engine/session fixtures
+│   ├── unit/                        # 14 unit test files
+│   └── integration/                 # 7 integration test files
 ├── docker-compose.yml
 ├── Dockerfile
 ├── pyproject.toml
@@ -72,46 +81,53 @@ appointment-slot-optimizer/
 
 ## Key Modules
 
-| Module | Purpose | Key Files |
-|--------|---------|-----------|
-| api | HTTP layer — config CRUD, health, auth middleware | `src/api/config_routes.py`, `src/api/health.py`, `src/api/middleware/` |
-| api/schemas | Pydantic request/response models | `src/api/schemas/config_schemas.py` |
-| db | Database models + async session factory | `src/db/models.py`, `src/db/session.py` |
-| lib | Shared utilities — errors, logging, time, scheduler | `src/lib/errors.py`, `src/lib/logger.py`, `src/lib/time_utils.py`, `src/lib/scheduler.py` |
-| optimizer | Slot computation (Phase 3 — not yet implemented) | `src/optimizer/` |
-| booking | Booking service (Phase 4 — not yet implemented) | `src/booking/` |
+| Module | Purpose | → Deep Reference |
+|--------|---------|-----------------|
+| optimizer | Constraint-based slot computation with quality scoring | `src/optimizer/` |
+| booking | Booking CRUD, idempotency, cancellation, backfill candidates | `src/booking/` |
+| integrations | Notification Hub fire-and-forget event emitter | `src/integrations/` |
+| jobs | Background jobs: no-show marker, stats calculator (hourly) | `src/jobs/` |
+| api | HTTP layer — config, bookings, slots, schedule, stats, health | `src/api/` |
+| api/schemas | Pydantic request/response models for all endpoints | `src/api/schemas/` |
+| db | Database models + async session factory | `src/db/` |
+| lib | Shared utilities — errors, logging, time, cache, pagination, scheduler | `src/lib/` |
 
 ## Database Schema
 
-| Table | Purpose | Key Fields |
-|-------|---------|-----------|
-| providers | Doctor/specialist records | id (UUID), name, specialty, max_daily_appointments, buffer_minutes, enabled |
-| rooms | Physical rooms with types | id (UUID), name, room_type (enum), equipment (array), enabled |
-| appointment_types | Defines duration and requirements | id (UUID), name, duration_minutes, required_room_type, required_equipment |
-| provider_availability | Weekly schedule windows | provider_id (FK), day_of_week, start_time, end_time, valid_from, valid_until |
-| bookings | Confirmed/cancelled appointments | request_id (unique), provider_id (FK), room_id (FK), date, start_time, end_time, status (enum) |
-| overbooking_rules | Per-provider/type overbook limits | provider_id (FK nullable), appointment_type_id (FK nullable), max_overbook |
+6 tables — all UUID PKs, `created_at`/`updated_at` timestamps. → see `src/db/models.py`
+
+| Table | Purpose |
+|-------|---------|
+| providers | Doctor records (name, specialty, max_daily, buffer_minutes, enabled) |
+| rooms | Physical rooms (name, room_type, equipment[], enabled) |
+| appointment_types | Duration + room requirements |
+| provider_availability | Weekly windows (day_of_week, start/end_time, valid_from/until) |
+| bookings | Appointments (request_id unique, patient_name/email, 3 FKs, date/times, status) |
+| overbooking_rules | Per-provider/type overbook limits |
+
+**Unique:** `uq_provider_slot`, `uq_room_slot` (prevent double-booking)
 
 ## External Integrations
 
 | Service | Purpose | Auth Method |
 |---------|---------|------------|
-| None in v1 | Self-contained scheduling engine | N/A |
+| Notification Hub | Fire-and-forget events (appointment.booked, .cancelled, .no_show) | API key in `X-API-Key` header |
+| BetterStack | External health monitoring (polls GET /api/health) | Heartbeat URL |
 
 ## Environment Variables
 
-| Variable | Purpose | Source |
-|----------|---------|--------|
-| HOST | Server bind address | `.env` (default: 0.0.0.0) |
-| PORT | Server port | `.env` (default: 8000) |
-| ENV | Environment mode | `.env` (development/production) |
-| API_KEYS | Comma-separated valid API keys | `.env` |
-| DATABASE_URL | PostgreSQL connection string (port 5434 on dev — see Gotchas) | `.env` |
-| SLOT_INCREMENT_MINUTES | Slot generation interval | `.env` (default: 15) |
-| DEFAULT_BUFFER_MINUTES | Buffer between appointments | `.env` (default: 10) |
-| MAX_DAILY_APPOINTMENTS | Per-provider daily limit | `.env` (default: 20) |
-| OVERBOOK_DEFAULT | Default overbook limit | `.env` (default: 0) |
-| LOG_LEVEL | Logging verbosity | `.env` (default: info) |
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| HOST, PORT, ENV | Server bind, port, mode | 0.0.0.0, 8000, development |
+| API_KEYS | Comma-separated valid API keys | (required) |
+| DATABASE_URL | PostgreSQL connection (port **5434** on dev) | (required) |
+| SLOT_INCREMENT_MINUTES | Slot generation interval | 15 |
+| DEFAULT_BUFFER_MINUTES | Buffer between appointments | 10 |
+| MAX_DAILY_APPOINTMENTS | Per-provider daily limit | 20 |
+| OVERBOOK_DEFAULT | Default overbook limit | 0 |
+| NOTIFICATION_HUB_URL/API_KEY/ENABLED | Hub base URL, key, toggle | "", "", false |
+| BETTERSTACK_HEARTBEAT_URL | External health monitor | "" |
+| LOG_LEVEL | Logging verbosity | info |
 
 ## Commands
 
@@ -129,59 +145,55 @@ appointment-slot-optimizer/
 
 ## Key Patterns & Conventions
 
-- File naming: `snake_case.py`
-- Import order: stdlib → third-party → local (blank line between groups)
-- Error handling: Consistent JSON error format `{ "error": { "code", "message", "details" } }`
-- Auth: API key in `X-API-Key` header, validated by middleware
-- Pagination: Offset-based with `page` + `page_size` query params (default 25, max 100)
-- IDs: UUID (generated by database)
-- Timestamps: `created_at` / `updated_at` on all resource tables
-- Slots: Computed in real-time, never stored
-- Booking safety: DB UNIQUE constraints prevent double-booking at data layer
-- Idempotency: `request_id` on bookings prevents duplicate operations
+- Error format: `{ "error": { "code", "message", "details" } }` via AppError
+- Auth: `X-API-Key` header, middleware dependency
+- Pagination: Offset-based, `page` + `page_size` (default 25, max 100)
+- IDs: UUID via `gen_random_uuid()` | Timestamps: `created_at`/`updated_at`
+- Slots: Real-time computation, never stored | Double-booking: DB UNIQUE constraints
+- Idempotency: `request_id` on bookings | Backfill: +/-7 days proximity on cancel
+- Cache: In-memory TTL 60s for availability | Jobs: APScheduler hourly, `asyncio.run()`
+- Events: Fire-and-forget via NotificationHubClient (never blocks booking)
+- Scoring: 0.0-1.0 weighted: preference 40%, gap 35%, room 15%, overbook 10%
 
 ## Gotchas & Lessons Learned
 
-> Discovered during implementation. Added automatically by `/implement-next` Step 9.3.
-
-| Date | Area | Gotcha | Discovered In |
-|------|------|--------|---------------|
-| 2026-03-21 | Docker | Native PostgreSQL runs on port 5432; Docker Compose maps to **5434** to coexist. `DATABASE_URL` must use port 5434 for local dev. | Phase 0 setup |
-| 2026-03-22 | Tests | `async_engine` fixture MUST be **function-scoped** (not session-scoped). Session-scoped causes asyncpg `InterfaceError: another operation is in progress` on 2nd+ test. | Phase 2 config API |
-| 2026-03-22 | Tests | `get_engine` uses `@lru_cache`. The lifespan's `engine.dispose()` poisons it — `_clear_engine_cache` autouse fixture clears it between tests. | Phase 2 config API |
+| Area | Gotcha |
+|------|--------|
+| Docker | Postgres maps to port **5434** (not 5432) to coexist with native install |
+| Tests | `async_engine` fixture MUST be **function-scoped** — session-scoped causes asyncpg `InterfaceError` |
+| Tests | `get_engine` uses `@lru_cache` — `_clear_engine_cache` autouse fixture clears it between tests |
 
 ## Shared Foundation (MUST READ before any implementation)
 
-> These files define the project's shared patterns, configuration, and utilities.
-> The AI MUST read these **in full** before writing ANY new code. Never recreate what exists here.
+> These files define the project's shared patterns. Read **in full** before writing new code.
 
 | Category | File(s) | What it establishes |
 |----------|---------|-------------------|
-| Config | `src/config.py` | Pydantic Settings, all env vars, defaults |
-| DB session | `src/db/session.py` | Async SQLAlchemy engine (lru_cache) + session factory |
-| DB models | `src/db/models.py` | All SQLAlchemy models, base class, 6 tables |
-| Error handling | `src/lib/errors.py` | AppError class + JSON error envelope handler |
-| Auth middleware | `src/api/middleware/auth.py` | API key validation dependency |
-| Schemas | `src/api/schemas/config_schemas.py` | Pydantic models for all config entities + RoomType enum |
-| Logger | `src/lib/logger.py` | Structured logging with structlog |
-| Time utils | `src/lib/time_utils.py` | Interval math for slot computation |
-| Scheduler | `src/lib/scheduler.py` | APScheduler BackgroundScheduler factory |
-| Pagination | `src/lib/pagination.py` | PaginationParams + get_pagination dependency (page/page_size/offset) |
-| Booking service | `src/booking/service.py` | create_booking() with idempotency, validation, conflict prevention |
-| Booking schemas | `src/api/schemas/booking_schemas.py` | BookingCreate, BookingOut Pydantic models |
-| Seed data | `src/db/seed.py` | Idempotent dev seed: 5 providers, 8 rooms, 6 types, ~220 bookings |
-| Test fixtures | `tests/conftest.py` | Async engine/session fixtures with rollback isolation |
+| Config + DB | `src/config.py`, `src/db/session.py`, `src/db/models.py` | Settings, async engine, 6-table schema |
+| Error + Auth | `src/lib/errors.py`, `src/api/middleware/auth.py` | AppError envelope + API key dependency |
+| Schemas | `src/api/schemas/*.py` | Pydantic models for config, booking, slot, schedule |
+| Lib utilities | `src/lib/` (all files) | Logger, time math, TTL cache, pagination, scheduler |
+| Optimizer | `src/optimizer/constraints.py`, `src/optimizer/scorer.py` | Availability windows, buffers, room filtering, scoring |
+| Booking | `src/booking/service.py`, `src/booking/backfill.py` | CRUD + validation, backfill candidates |
+| Integrations | `src/integrations/notification_hub.py` | Fire-and-forget event emitter |
+| Seed + Tests | `src/db/seed.py`, `tests/conftest.py` | Dev seed data, async test fixtures |
 
 ## Deep References
 
-> For detailed implementation patterns, read the source directly — don't embed here.
+> For detailed implementation, read the source directly.
 
 | Topic | Where to look |
 |-------|--------------|
 | Slot optimizer logic | `src/optimizer/` |
 | Booking service | `src/booking/` |
-| API routes & CRUD | `src/api/config_routes.py`, `src/api/health.py` |
-| Pydantic schemas | `src/api/schemas/config_schemas.py` |
+| Notification Hub integration | `src/integrations/notification_hub.py` |
+| Background jobs | `src/jobs/` |
+| Config CRUD routes | `src/api/config_routes.py` |
+| Booking routes | `src/api/booking_routes.py` |
+| Slots API | `src/api/slots.py` |
+| Schedule API | `src/api/schedule.py` |
+| Stats API | `src/api/stats.py` |
+| Pydantic schemas | `src/api/schemas/` |
 | Database models | `src/db/models.py` |
 | Test patterns | `tests/` |
 | Deployment config | `Dockerfile`, `docker-compose.yml` |

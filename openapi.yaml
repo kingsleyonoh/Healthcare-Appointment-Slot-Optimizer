@@ -1,0 +1,287 @@
+# OpenAPI 3.1 — Healthcare Appointment Slot Optimizer
+openapi: "3.1.0"
+info:
+  title: "Healthcare Appointment Slot Optimizer API"
+  description: "Constraint-based scheduling engine for healthcare clinics"
+  version: "0.1.0"
+  contact:
+    name: Kingsley Onoh
+    url: https://kingsleyonoh.com
+servers:
+  - url: http://localhost:8000
+    description: Local development
+security:
+  - apiKey: []
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+paths:
+  /api/health:
+    get:
+      tags: [health]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+  /api/slots:
+    get:
+      tags: [slots]
+      summary: Find available appointment slots
+      parameters:
+        - name: target_date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: appointment_type_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: provider_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: preferred_start
+          in: query
+          schema: { type: string, format: time }
+        - name: preferred_end
+          in: query
+          schema: { type: string, format: time }
+      responses:
+        "200":
+          description: Scored available slots
+  /api/bookings:
+    post:
+      tags: [bookings]
+      summary: Create a booking (idempotent via request_id)
+      responses:
+        "201":
+          description: Booking created
+        "200":
+          description: Existing booking returned (idempotent)
+    get:
+      tags: [bookings]
+      summary: List bookings with optional filters
+      parameters:
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+        - name: provider_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 25 }
+      responses:
+        "200":
+          description: Paginated booking list
+  /api/bookings/{booking_id}:
+    get:
+      tags: [bookings]
+      summary: Get a single booking
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Booking details
+        "404":
+          description: Booking not found
+  /api/bookings/{booking_id}/cancel:
+    put:
+      tags: [bookings]
+      summary: Cancel a booking and get backfill candidates
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Cancelled booking with backfill candidates
+        "404":
+          description: Booking not found
+  /api/schedule:
+    get:
+      tags: [schedule]
+      summary: Schedule view with utilization per provider/date
+      parameters:
+        - name: date_from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: provider_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: room_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Provider schedules with gaps and utilization
+  /api/stats:
+    get:
+      tags: [stats]
+      summary: Daily statistics
+      responses:
+        "200":
+          description: Utilization, booking count, no-show count
+  /api/providers:
+    post:
+      tags: [config]
+      summary: Create a provider
+      responses:
+        "201":
+          description: Provider created
+    get:
+      tags: [config]
+      summary: List providers
+      responses:
+        "200":
+          description: Paginated provider list
+  /api/providers/{provider_id}:
+    get:
+      tags: [config]
+      summary: Get a provider
+      responses:
+        "200":
+          description: Provider details
+    put:
+      tags: [config]
+      summary: Update a provider
+      responses:
+        "200":
+          description: Updated provider
+    delete:
+      tags: [config]
+      summary: Delete a provider
+      responses:
+        "204":
+          description: Provider deleted
+  /api/rooms:
+    post:
+      tags: [config]
+      summary: Create a room
+      responses:
+        "201":
+          description: Room created
+    get:
+      tags: [config]
+      summary: List rooms
+      responses:
+        "200":
+          description: Paginated room list
+  /api/rooms/{room_id}:
+    get:
+      tags: [config]
+      summary: Get a room
+      responses:
+        "200":
+          description: Room details
+    put:
+      tags: [config]
+      summary: Update a room
+      responses:
+        "200":
+          description: Updated room
+    delete:
+      tags: [config]
+      summary: Delete a room
+      responses:
+        "204":
+          description: Room deleted
+  /api/appointment-types:
+    post:
+      tags: [config]
+      summary: Create an appointment type
+      responses:
+        "201":
+          description: Appointment type created
+    get:
+      tags: [config]
+      summary: List appointment types
+      responses:
+        "200":
+          description: Paginated appointment type list
+  /api/appointment-types/{type_id}:
+    get:
+      tags: [config]
+      summary: Get an appointment type
+      responses:
+        "200":
+          description: Appointment type details
+    put:
+      tags: [config]
+      summary: Update an appointment type
+      responses:
+        "200":
+          description: Updated appointment type
+    delete:
+      tags: [config]
+      summary: Delete an appointment type
+      responses:
+        "204":
+          description: Appointment type deleted
+  /api/provider-availability:
+    post:
+      tags: [config]
+      summary: Create provider availability window
+      responses:
+        "201":
+          description: Availability created
+    get:
+      tags: [config]
+      summary: List provider availability
+      responses:
+        "200":
+          description: Paginated availability list
+  /api/provider-availability/{availability_id}:
+    delete:
+      tags: [config]
+      summary: Delete an availability window
+      responses:
+        "204":
+          description: Availability deleted
+  /api/overbooking-rules:
+    post:
+      tags: [config]
+      summary: Create an overbooking rule
+      responses:
+        "201":
+          description: Rule created
+    get:
+      tags: [config]
+      summary: List overbooking rules
+      responses:
+        "200":
+          description: Paginated rule list
+  /api/overbooking-rules/{rule_id}:
+    put:
+      tags: [config]
+      summary: Update an overbooking rule
+      responses:
+        "200":
+          description: Updated rule
+    delete:
+      tags: [config]
+      summary: Delete an overbooking rule
+      responses:
+        "204":
+          description: Rule deleted

@@ -1,6 +1,6 @@
 # Healthcare Appointment Slot Optimizer — Coding Standards: Testing
 
-> Part 2 of 3. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_DOMAIN.md`
+> Part 2 of 5. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_TESTING_LIVE.md`, `CODING_STANDARDS_DOMAIN.md`, `CODING_STANDARDS_AI.md`
 
 ## Testing Rules — Anti-Cheat (CRITICAL)
 
@@ -85,73 +85,7 @@ Before moving from RED → GREEN, verify ALL applicable categories have tests:
 - Every test must answer: Does this protect data? Apply rules correctly? Handle failure? Match the spec?
 - Test names must describe business behavior, not technical actions.
 
-## Live Integration Testing (Mock Policy)
+## Live Integration & Backend API Testing
 
-### The Rule: Don't Mock What You Own
-If you control the service and can run it locally → test against the real thing.
-
-### Service Fallback Hierarchy
-When deciding how to test a service, follow this order:
-1. **Local instance** (best) — Docker, CLI, emulator on your machine
-2. **Cloud dev instance** (good) — dedicated test project / staging environment
-3. **Mock** (last resort) — only when options 1 and 2 are impossible
-
-### Test LIVE (Never Mock)
-- Your database (local Supabase, local Postgres) — validates schema, column names, constraints, query behavior
-- Your own API endpoints — call the actual route, not a stub
-- Your own server actions / business logic — test the real function
-- File storage you control (local Supabase Storage, local filesystem)
-
-### Mock ONLY These
-- Third-party payment APIs (Stripe charges money)
-- Email/SMS delivery (SendGrid/Twilio sends messages)
-- Rate-limited external APIs you don't control
-- Services with irreversible side effects
-- Cloud-only services with no local emulator AND no dev tier
-
-### No Services? No Problem
-If the project has no external services (CLI tool, library, static site), this policy doesn't apply — just write standard unit tests.
-
-### Why This Matters
-A mock that returns `{ user_id: 1 }` will pass even when the real column is `userId`. A mock that returns success will pass even when the real constraint rejects your data. Mocks test your ASSUMPTIONS about the service. Live tests test REALITY.
-
-### Common Mock Violations (DO NOT DO THESE)
-- ❌ Mocking your database client to return fake rows — hit the real database
-- ❌ Mocking your own API routes with `nock`/`msw` — call the real endpoint via test client
-- ❌ Using an in-memory SQLite when production uses PostgreSQL — use the real PostgreSQL
-- ❌ Mocking Redis/cache when it's running in Docker — connect to the real instance
-- ✅ Mocking Stripe's charge API — you don't want to charge real money in tests
-- ✅ Mocking SendGrid — you don't want to send real emails in tests
-- ✅ Mocking an external API with rate limits — you don't control their uptime
-
-### Test Cleanup
-- Each test MUST clean up after itself (delete rows, reset state)
-- Use transactions with rollback when possible for speed
-
-## Backend API & Integration Testing
-
-> This section applies to backend-only projects (APIs, workers, CLI tools).
-
-### When to Write API Integration Tests
-- Every **API endpoint**: test request → response cycle with real HTTP semantics
-- Every **background job/worker**: test job execution with actual service dependencies
-- Every **middleware**: test request interception, auth guards, validation layers
-
-### What to Test
-| Priority | Test This | Example |
-|----------|-----------|---------|
-| 1 | Request/response cycle | POST /api/providers → 201, returns created provider |
-| 2 | Input validation | Missing required field → 400 with specific error |
-| 3 | Auth & authorization | No API key → 401; invalid key → 401 |
-| 4 | Error handling | Invalid ID → 404; DB constraint → 409 |
-| 5 | Edge cases | Empty body, oversized payload, duplicate submission |
-
-### API Testing Patterns
-- Use FastAPI's `TestClient` or httpx `AsyncClient` for testing
-- Test full request lifecycle — serialization, middleware, handler, response
-- Assert on status codes, response body structure, AND headers where relevant
-- Test pagination, filtering, and sorting with real DB rows
-
-### File Naming & Location
-- Name: `test_module_name.py` — in `tests/` mirror structure
-- Group shared test helpers in `tests/conftest.py` or `tests/factories.py`
+> Mock policy, integration testing, backend API testing, and E2E testing rules are in `CODING_STANDARDS_TESTING_LIVE.md`.
+> Read that file when working on integration tests, E2E tests, or deciding what to mock.
