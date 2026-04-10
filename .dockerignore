@@ -9,7 +9,8 @@ vendor
 # Documentation & AI workflows (not needed in image)
 docs/
 .agent/
-*.md
+.yolo/
+README.md
 LICENSE
 
 # Environment (injected at runtime)
@@ -23,8 +24,17 @@ LICENSE
 .DS_Store
 Thumbs.db
 
-# Build artifacts (rebuilt in container)
+# Python artifacts (rebuilt in container)
+venv
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
 dist
 build
 tmp
 coverage
+.pytest_cache
+.coverage
+htmlcov
+tests

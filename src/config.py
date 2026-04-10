@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     NOTIFICATION_HUB_API_KEY: str = ""
     NOTIFICATION_HUB_ENABLED: bool = False
 
+    # --- Monitoring ---
+    BETTERSTACK_HEARTBEAT_URL: str = ""
+
     # --- Logging ---
     LOG_LEVEL: str = "info"
 
