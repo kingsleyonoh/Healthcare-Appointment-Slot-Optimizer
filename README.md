@@ -262,4 +262,6 @@ docker compose -f docker-compose.prod.yml up -d
 
 The entrypoint runs `alembic upgrade head` automatically before starting the server. Set the environment variables listed in **Setup > Environment** before starting.
 
-<!-- THEATRE_LINK -->
+---
+
+Full case study, architectural breakdown, and engineering deep-dive at [kingsleyonoh.com/projects/clinical-scheduling-engine](https://www.kingsleyonoh.com/projects/clinical-scheduling-engine)
